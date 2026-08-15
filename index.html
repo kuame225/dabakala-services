@@ -321,6 +321,31 @@ const api = {
   async updateFullName(userId, fullName) {
     return supabase.from("profiles").update({ full_name: fullName }).eq("id", userId);
   },
+  async incrementViews(providerId) {
+    return supabase.rpc("increment_provider_views", { p_provider_id: providerId });
+  },
+  async sendRequest(providerId, clientId, message) {
+    return supabase.from("requests").insert({ provider_id: providerId, client_id: clientId, message });
+  },
+  async fetchProviderRequests(providerIds) {
+    if (!providerIds.length) return [];
+    const { data, error } = await supabase.from("requests").select("*, profiles(full_name)").in("provider_id", providerIds).order("created_at", { ascending: false });
+    return error ? [] : data;
+  },
+  async fetchMyRequests(clientId) {
+    const { data, error } = await supabase.from("requests").select("*, providers(name)").eq("client_id", clientId).order("created_at", { ascending: false });
+    return error ? [] : data;
+  },
+  async markRequestTreated(requestId) {
+    return supabase.from("requests").update({ status: "traite" }).eq("id", requestId);
+  },
+  async fetchRequestMessages(requestId) {
+    const { data, error } = await supabase.from("request_messages").select("*").eq("request_id", requestId).order("created_at", { ascending: true });
+    return error ? [] : data;
+  },
+  async sendRequestMessage(requestId, senderId, body) {
+    return supabase.from("request_messages").insert({ request_id: requestId, sender_id: senderId, body });
+  },
   async upsertReview(providerId, userId, rating, comment) {
     return supabase.from("reviews").upsert(
       { provider_id: providerId, user_id: userId, rating, comment },
@@ -951,10 +976,28 @@ function ProviderSheet({ provider, categories, session, onBack }) {
   const [fav, setFav] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
+  const [showRequest, setShowRequest] = useState(false);
+  const [requestMsg, setRequestMsg] = useState("");
+  const [requestSent, setRequestSent] = useState(false);
+  const [requestBusy, setRequestBusy] = useState(false);
 
   useEffect(() => {
     if (session) api.isFavorite(provider.id, session.user.id).then(setFav);
   }, [provider.id, session]);
+
+  useEffect(() => {
+    api.incrementViews(provider.id);
+  }, [provider.id]);
+
+  const sendRequest = async () => {
+    if (!session) { setShowAuth(true); return; }
+    setRequestBusy(true);
+    await api.sendRequest(provider.id, session.user.id, requestMsg);
+    setRequestBusy(false);
+    setRequestSent(true);
+    setRequestMsg("");
+    setTimeout(() => { setShowRequest(false); setRequestSent(false); }, 2000);
+  };
 
   const toggleFav = async () => {
     if (!session) { setShowAuth(true); return; }
@@ -1086,6 +1129,28 @@ function ProviderSheet({ provider, categories, session, onBack }) {
           </div>
 
           <div>
+            <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>Envoyer une demande</div>
+            {requestSent ? (
+              <div className="rounded-2xl p-4 text-center" style={{ background: "#EAF7EF" }}>
+                <Icon name="checkCircle" size={22} color={T.greenDeep} filled />
+                <div className="text-sm font-bold mt-1.5" style={{ color: T.greenDeep }}>Demande envoyée !</div>
+              </div>
+            ) : showRequest ? (
+              <div className="rounded-2xl p-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+                <textarea value={requestMsg} onChange={(e) => setRequestMsg(e.target.value)} rows={3} placeholder="Décrivez votre besoin (optionnel)…"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+                <button onClick={sendRequest} disabled={requestBusy} className="w-full mt-2 rounded-xl py-2.5 font-bold text-white" style={{ background: T.blue, opacity: requestBusy ? 0.6 : 1 }}>
+                  {requestBusy ? "…" : "Envoyer"}
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => (session ? setShowRequest(true) : setShowAuth(true))} className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 font-bold text-sm" style={{ background: "var(--card)", border: `1.5px solid ${T.blue}`, color: T.blue, boxShadow: T.shadow }}>
+                <Icon name="chat" size={16} color={T.blue} /> Envoyer une demande à ce prestataire
+              </button>
+            )}
+          </div>
+
+          <div>
             <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>Avis clients</div>
             {showAuth ? <AuthForm onDone={() => setShowAuth(false)} /> : <ReviewsSection provider={provider} session={session} />}
           </div>
@@ -1125,13 +1190,104 @@ function ProfileSubScreen({ title, onBack, children }) {
   );
 }
 
+function RequestThread({ request, session, isProvider, onBack, onTreated }) {
+  const [messages, setMessages] = useState(null);
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.fetchRequestMessages(request.id).then(setMessages);
+  useEffect(load, [request.id]);
+
+  const send = async () => {
+    if (!body.trim()) return;
+    setBusy(true);
+    await api.sendRequestMessage(request.id, session.user.id, body.trim());
+    setBody("");
+    setBusy(false);
+    load();
+  };
+
+  const otherName = isProvider ? (request.profiles?.full_name || "Client") : (request.providers?.name || "Prestataire");
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: T.bg }}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={onBack} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
+        <span className="font-bold text-sm flex-1 truncate" style={{ color: T.ink }}>{otherName}</span>
+        {isProvider && request.status !== "traite" && (
+          <button onClick={() => { api.markRequestTreated(request.id); onTreated && onTreated(); }} className="text-[11px] font-bold" style={{ color: T.greenDeep }}>Marquer traité</button>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        {request.message && (
+          <div className="rounded-2xl rounded-tl-sm p-3 max-w-[85%]" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="text-sm" style={{ color: T.ink }}>{request.message}</div>
+            <div className="text-[10px] mt-1" style={{ color: T.mute }}>{timeAgo(request.created_at)}</div>
+          </div>
+        )}
+        {messages === null ? (
+          <Skeleton height={50} radius={16} />
+        ) : messages.map((m) => {
+          const mine = m.sender_id === session.user.id;
+          return (
+            <div key={m.id} className={"rounded-2xl p-3 max-w-[85%] " + (mine ? "rounded-tr-sm ml-auto" : "rounded-tl-sm")} style={{ background: mine ? T.blue : "var(--card)", boxShadow: mine ? "none" : T.shadow }}>
+              <div className="text-sm" style={{ color: mine ? "#fff" : T.ink }}>{m.body}</div>
+              <div className="text-[10px] mt-1" style={{ color: mine ? "rgba(255,255,255,0.75)" : T.mute }}>{timeAgo(m.created_at)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2 px-4 py-3" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}` }}>
+        <input value={body} onChange={(e) => setBody(e.target.value)} placeholder="Écrire un message…" className="flex-1 rounded-xl px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <button onClick={send} disabled={busy || !body.trim()} className="rounded-xl px-4 py-2 font-bold text-sm text-white" style={{ background: T.blue, opacity: !body.trim() ? 0.5 : 1 }}>Envoyer</button>
+      </div>
+    </div>
+  );
+}
+
+function RequestsList({ requests, session, isProvider, onBack, title }) {
+  const [openRequest, setOpenRequest] = useState(null);
+
+  if (openRequest) {
+    return <RequestThread request={openRequest} session={session} isProvider={isProvider} onBack={() => setOpenRequest(null)} onTreated={() => setOpenRequest(null)} />;
+  }
+
+  return (
+    <ProfileSubScreen title={title} onBack={onBack}>
+      {requests === null ? (
+        <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} height={60} radius={16} />)}</div>
+      ) : requests.length === 0 ? (
+        <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucune demande pour l'instant.</div>
+      ) : (
+        <div className="space-y-2">
+          {requests.map((r) => (
+            <button key={r.id} onClick={() => setOpenRequest(r)} className="w-full rounded-2xl p-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm truncate" style={{ color: T.ink }}>{isProvider ? (r.profiles?.full_name || "Client") : (r.providers?.name || "Prestataire")}</span>
+                {r.status === "nouveau" ? (
+                  <span className="rounded-full text-[10px] font-bold px-2 py-0.5" style={{ background: "#FBF3E3", color: "#8A5A00" }}>Nouveau</span>
+                ) : (
+                  <span className="rounded-full text-[10px] font-bold px-2 py-0.5" style={{ background: "#EAF7EF", color: T.greenDeep }}>Traité</span>
+                )}
+              </div>
+              {r.message && <p className="text-xs mt-1 truncate" style={{ color: T.mute }}>{r.message}</p>}
+              <div className="text-[10px] mt-1" style={{ color: T.mute }}>{timeAgo(r.created_at)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </ProfileSubScreen>
+  );
+}
+
 function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) {
   const [showAuth, setShowAuth] = useState(false);
   const [profile, setProfile] = useState(null);
   const [favCount, setFavCount] = useState(null);
   const [myProviders, setMyProviders] = useState([]);
   const [myReviews, setMyReviews] = useState(null);
-  const [subView, setSubView] = useState(null); // null | "avis" | "infos" | "apropos"
+  const [myRequests, setMyRequests] = useState(null);
+  const [subView, setSubView] = useState(null); // null | "avis" | "infos" | "apropos" | "demandes"
   const [nameInput, setNameInput] = useState("");
   const [savingName, setSavingName] = useState(false);
 
@@ -1141,6 +1297,7 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
     api.fetchFavoriteProviders(session.user.id).then((f) => setFavCount(f.length));
     api.fetchProviders().then((all) => setMyProviders(all.filter((p) => p.added_by === session.user.id)));
     api.fetchMyReviews(session.user.id).then(setMyReviews);
+    api.fetchMyRequests(session.user.id).then(setMyRequests);
   };
   useEffect(load, [session]);
 
@@ -1172,6 +1329,10 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
   }
 
   const name = profile?.full_name || session.user.email;
+
+  if (subView === "demandes") {
+    return <RequestsList requests={myRequests} session={session} isProvider={false} onBack={() => setSubView(null)} title="Mes demandes" />;
+  }
 
   if (subView === "avis") {
     return (
@@ -1273,6 +1434,7 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
       <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow }}>
         <ProfileRow icon="heart" title="Mes favoris" subtitle="Prestataires que vous avez enregistrés" onClick={() => onNavigate && onNavigate("favorites")} />
         <ProfileRow icon="star" title="Mes avis" subtitle="Avis que vous avez publiés" onClick={() => setSubView("avis")} />
+        <ProfileRow icon="chat" title="Mes demandes" subtitle={(myRequests ? myRequests.length : 0) + " demande(s) envoyée(s)"} onClick={() => setSubView("demandes")} />
         <div style={{ borderBottom: "none" }}>
           <ProfileRow icon="store" title="Mes fiches prestataire" subtitle={myProviders.length + " fiche(s)"} onClick={() => {}} />
         </div>
@@ -1944,6 +2106,205 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
   );
 }
 
+function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
+  const [myProviders, setMyProviders] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [reviews, setReviews] = useState(null);
+  const [tab, setTab] = useState("home"); // home | requests | avis
+  const [editing, setEditing] = useState(false);
+  const [extras, setExtras] = useState(false);
+  const [preview, setPreview] = useState(false);
+
+  const load = async () => {
+    const all = await api.fetchProviders();
+    const mine = all.filter((p) => p.added_by === session.user.id);
+    setMyProviders(mine);
+    if (mine.length && !selectedId) setSelectedId(mine[0].id);
+    const ids = mine.map((p) => p.id);
+    setRequests(await api.fetchProviderRequests(ids));
+    const allReviews = await api.fetchRecentReviews();
+    setReviews(allReviews.filter((r) => ids.includes(r.provider_id)));
+  };
+  useEffect(() => { load(); }, [session]);
+
+  if (myProviders === null) {
+    return (
+      <div className="h-full flex items-center justify-center" style={{ background: T.bg }}>
+        <Skeleton width={200} height={80} radius={16} />
+      </div>
+    );
+  }
+
+  if (myProviders.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: T.bg }}>
+        <div className="rounded-full flex items-center justify-center mb-4" style={{ width: 64, height: 64, background: "#FBE0C4" }}>
+          <Icon name="store" size={28} color={T.orange} />
+        </div>
+        <div className="font-bold text-base mb-2" style={{ color: T.ink }}>Vous n'avez pas encore de fiche</div>
+        <p className="text-sm mb-5" style={{ color: T.mute }}>Inscrivez votre activité pour accéder à votre tableau de bord.</p>
+        <button onClick={onOpenOnboarding} className="rounded-xl px-5 py-2.5 font-bold text-white" style={{ background: T.orange }}>Inscrire mon activité</button>
+        <button onClick={onClose} className="mt-3 text-sm font-semibold" style={{ color: T.blue }}>Retour</button>
+      </div>
+    );
+  }
+
+  const provider = myProviders.find((p) => p.id === selectedId) || myProviders[0];
+  const myReqs = (requests || []).filter((r) => r.provider_id === provider.id);
+  const myRevs = (reviews || []).filter((r) => r.provider_id === provider.id);
+  const newReqs = myReqs.filter((r) => r.status === "nouveau").length;
+
+  const fields = [provider.name, provider.category_id, provider.zone, provider.phone, provider.description, provider.price_text, provider.photo_url];
+  const filled = fields.filter(Boolean).length;
+  const completion = Math.round((filled / fields.length) * 100);
+
+  if (editing) {
+    return (
+      <ProfileSubScreen title="Modifier mon activité" onBack={() => { setEditing(false); load(); }}>
+        <ProviderEditForm provider={provider} categories={categories} onCancel={() => setEditing(false)} onSave={() => { setEditing(false); load(); }} />
+      </ProfileSubScreen>
+    );
+  }
+  if (extras) {
+    return (
+      <ProfileSubScreen title="Services & photos" onBack={() => { setExtras(false); load(); }}>
+        <ProviderExtrasManager provider={provider} onClose={() => { setExtras(false); load(); }} />
+      </ProfileSubScreen>
+    );
+  }
+  if (preview) {
+    return <ProviderSheet provider={provider} categories={categories} session={session} onBack={() => setPreview(false)} />;
+  }
+  if (tab === "requests") {
+    return <RequestsList requests={myReqs} session={session} isProvider onBack={() => setTab("home")} title="Demandes reçues" />;
+  }
+  if (tab === "avis") {
+    return (
+      <ProfileSubScreen title="Avis clients" onBack={() => setTab("home")}>
+        <ReviewsSection provider={provider} session={session} />
+      </ProfileSubScreen>
+    );
+  }
+
+  const name = "Prestataire";
+  const avgRating = myRevs.length ? (myRevs.reduce((s, r) => s + r.rating, 0) / myRevs.length).toFixed(1) : provider.rating;
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: T.bg }}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={onClose} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
+        <span className="font-bold text-sm flex-1" style={{ color: T.ink }}>Tableau de bord prestataire</span>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {myProviders.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto mb-3" style={{ scrollbarWidth: "none" }}>
+            {myProviders.map((p) => (
+              <button key={p.id} onClick={() => setSelectedId(p.id)} className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+                style={{ background: p.id === provider.id ? T.navy : "var(--card)", color: p.id === provider.id ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="rounded-2xl p-4" style={{ background: T.navy }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-extrabold text-base" style={{ color: "#fff" }}>Bonjour 👋</div>
+              <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.8)" }}>{provider.name}</div>
+            </div>
+            <div className="rounded-full flex items-center justify-center font-bold text-sm" style={{ width: 52, height: 52, background: "rgba(255,255,255,0.15)", color: "#fff" }}>
+              {completion}%
+            </div>
+          </div>
+          <div className="mt-3 rounded-full overflow-hidden" style={{ height: 6, background: "rgba(255,255,255,0.2)" }}>
+            <div style={{ width: completion + "%", height: "100%", background: T.orange }} />
+          </div>
+          <button onClick={() => setEditing(true)} className="w-full mt-3 rounded-xl py-2 font-bold text-xs" style={{ background: "#fff", color: T.navy }}>
+            Compléter mon profil
+          </button>
+        </div>
+
+        {!provider.validated && (
+          <div className="flex items-center gap-3 rounded-2xl p-3 mt-3" style={{ background: "#FDF3E3" }}>
+            <Icon name="clock" size={20} color="#B7791F" />
+            <div>
+              <div className="text-xs font-bold" style={{ color: "#8A5A00" }}>Profil en attente de vérification</div>
+              <div className="text-[11px]" style={{ color: "#8A5A00" }}>Notre équipe vérifiera vos informations avant la publication.</div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-4 gap-2 mt-4">
+          <div className="rounded-2xl p-2.5 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="flex justify-center mb-1"><Icon name="eye" size={16} color={T.greenDeep} /></div>
+            <div className="font-bold text-sm" style={{ color: T.ink }}>{provider.views_count || 0}</div>
+            <div className="text-[9px]" style={{ color: T.mute }}>Vues</div>
+          </div>
+          <div className="rounded-2xl p-2.5 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="flex justify-center mb-1"><Icon name="chat" size={16} color={T.blue} /></div>
+            <div className="font-bold text-sm" style={{ color: T.ink }}>{myReqs.length}</div>
+            <div className="text-[9px]" style={{ color: T.mute }}>Demandes</div>
+          </div>
+          <div className="rounded-2xl p-2.5 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="flex justify-center mb-1"><Icon name="star" size={16} color={T.gold} filled /></div>
+            <div className="font-bold text-sm" style={{ color: T.ink }}>{myRevs.length}</div>
+            <div className="text-[9px]" style={{ color: T.mute }}>Avis</div>
+          </div>
+          <div className="rounded-2xl p-2.5 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="flex justify-center mb-1"><Icon name="star" size={16} color={T.gold} filled /></div>
+            <div className="font-bold text-sm" style={{ color: T.ink }}>{avgRating}</div>
+            <div className="text-[9px]" style={{ color: T.mute }}>Note moy.</div>
+          </div>
+        </div>
+
+        <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>Gérer mon activité</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {[
+            ["eye", "Voir mon profil public", () => setPreview(true)],
+            ["user", "Modifier mon activité", () => setEditing(true)],
+            ["wrench", "Mes services & photos", () => setExtras(true)],
+            ["star", "Avis clients", () => setTab("avis")],
+          ].map(([icon, label, fn]) => (
+            <button key={label} onClick={fn} className="rounded-2xl p-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+              <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 36, height: 36, background: T.bg }}>
+                <Icon name={icon} size={17} color={T.navy} />
+              </div>
+              <div className="text-xs font-bold" style={{ color: T.ink }}>{label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}` }}>
+        {[["home", "home", "Accueil"], ["requests", "chat", "Demandes"]].map(([id, icon, label]) => (
+          <button key={id} onClick={() => setTab(id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+            <Icon name={icon} size={20} color={tab === id ? T.navy : T.mute} />
+            <span className="text-[10px] font-semibold" style={{ color: tab === id ? T.navy : T.mute }}>{label}</span>
+            {id === "requests" && newReqs > 0 && (
+              <span className="absolute rounded-full font-bold" style={{ marginTop: -22, marginLeft: 14, background: T.orange, color: "#fff", fontSize: 8, padding: "1px 4px" }}>{newReqs}</span>
+            )}
+          </button>
+        ))}
+        <button onClick={onOpenOnboarding} className="flex flex-col items-center justify-center" style={{ width: 56 }}>
+          <div className="rounded-full flex items-center justify-center" style={{ width: 40, height: 40, background: T.orange, marginTop: -14, boxShadow: "0 4px 10px rgba(255,152,0,0.4)" }}>
+            <Icon name="wrench" size={18} color="#fff" />
+          </div>
+        </button>
+        <button onClick={() => setTab("avis")} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+          <Icon name="star" size={20} color={tab === "avis" ? T.navy : T.mute} />
+          <span className="text-[10px] font-semibold" style={{ color: tab === "avis" ? T.navy : T.mute }}>Avis</span>
+        </button>
+        <button onClick={onClose} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+          <Icon name="user" size={20} color={T.mute} />
+          <span className="text-[10px] font-semibold" style={{ color: T.mute }}>Profil</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AgentHome({ providers, categories, reviews, session, onChanged }) {
   const [form, setForm] = useState({ name: "", category_id: "reparation", zone: ZONES[0], phone: "", whatsapp: "", description: "", price_text: "" });
   const [coords, setCoords] = useState(null);
@@ -2538,6 +2899,7 @@ function App() {
   const setEntryChoice = (v) => { localStorage.setItem("dabakala:entryChoice", v); setEntryChoiceRaw(v); };
   const [showOnboarding, setShowOnboardingRaw] = useState(() => localStorage.getItem("dabakala:showOnboarding") === "1");
   const setShowOnboarding = (v) => { localStorage.setItem("dabakala:showOnboarding", v ? "1" : "0"); setShowOnboardingRaw(v); };
+  const [showDashboard, setShowDashboard] = useState(false);
   const [userTab, setUserTab] = useState("home");
   const [menuOpen, setMenuOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -2726,7 +3088,7 @@ function App() {
     { id: "profile", label: "Profil", icon: "user" },
   ];
 
-  const showBottomNav = role === "user" && !openProvider;
+  const showBottomNav = role === "user" && !openProvider && !showDashboard;
 
   return (
     <div className="flex flex-col w-full" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
@@ -2735,10 +3097,10 @@ function App() {
       </datalist>
 
       {/* Barre du haut : menu hamburger + profil */}
-      {!openProvider && (
+      {!openProvider && !showDashboard && (
         <div className="relative flex items-center justify-between px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={() => setMenuOpen((v) => !v)} style={{ color: T.ink }}><Icon name="menu" size={22} /></button>
-          <button onClick={() => { setRole("user"); setUserTab("profile"); }} className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: T.bg, border: `1px solid ${T.line}`, color: T.navy }}>
+          <button onClick={() => { setRole("user"); setUserTab("profile"); setShowDashboard(false); }} className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: T.bg, border: `1px solid ${T.line}`, color: T.navy }}>
             <Icon name="user" size={16} />
           </button>
 
@@ -2747,12 +3109,19 @@ function App() {
               <div onClick={() => setMenuOpen(false)} className="fixed inset-0" style={{ zIndex: 60, background: "rgba(0,0,0,0.15)" }} />
               <div className="absolute left-4 top-14 rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: "0 6px 24px rgba(0,0,0,0.18)", zIndex: 61, width: 220 }}>
                 {ROLES.map((r) => (
-                  <button key={r.id} onClick={() => { setRole(r.id); setMenuOpen(false); closeProvider(); }}
+                  <button key={r.id} onClick={() => { setRole(r.id); setMenuOpen(false); closeProvider(); setShowDashboard(false); }}
                     className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left"
-                    style={{ background: role === r.id ? T.bg : "#fff", color: role === r.id ? T.navy : T.ink, borderBottom: `1px solid ${T.line}` }}>
-                    <Icon name={r.icon} size={16} color={role === r.id ? T.navy : T.mute} /> {r.label}
+                    style={{ background: role === r.id && !showDashboard ? T.bg : "#fff", color: role === r.id && !showDashboard ? T.navy : T.ink, borderBottom: `1px solid ${T.line}` }}>
+                    <Icon name={r.icon} size={16} color={role === r.id && !showDashboard ? T.navy : T.mute} /> {r.label}
                   </button>
                 ))}
+                {session && (
+                  <button onClick={() => { setRole("user"); setShowDashboard(true); setMenuOpen(false); closeProvider(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left"
+                    style={{ background: showDashboard ? T.bg : "#fff", color: showDashboard ? T.navy : T.ink, borderBottom: `1px solid ${T.line}` }}>
+                    <Icon name="store" size={16} color={showDashboard ? T.navy : T.mute} /> Tableau de bord prestataire
+                  </button>
+                )}
                 {session && (
                   <button onClick={() => { supabase.auth.signOut(); setMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left" style={{ color: "#B3261E" }}>
                     <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
@@ -2770,9 +3139,13 @@ function App() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 dabakala-screen" key={`${role}-${userTab}-${openProvider || ""}-${showOnboarding}`}>
+      <div className="flex-1 min-h-0 dabakala-screen" key={`${role}-${userTab}-${openProvider || ""}-${showOnboarding}-${showDashboard}`}>
         {!loaded ? (
           <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
+        ) : showDashboard ? (
+          <ProviderDashboard session={session} categories={categories}
+            onClose={() => setShowDashboard(false)}
+            onOpenOnboarding={() => { setShowDashboard(false); setShowOnboarding(true); }} />
         ) : showOnboarding ? (
           <ProviderOnboarding session={session} categories={categories}
             onClose={() => setShowOnboarding(false)}
