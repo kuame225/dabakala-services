@@ -1971,6 +1971,179 @@ function NotificationBell({ items, storageKey }) {
   );
 }
 
+function ProviderSignupForm({ categories, onDone }) {
+  const [step, setStep] = useState("form"); // form | pendingConfirm
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [actName, setActName] = useState("");
+  const [categoryId, setCategoryId] = useState(categories[0]?.id || "reparation");
+  const [description, setDescription] = useState("");
+  const [zone, setZone] = useState("");
+  const [sameWhatsapp, setSameWhatsapp] = useState(true);
+  const [whatsappOther, setWhatsappOther] = useState("");
+  const [availability, setAvailability] = useState("Tous les jours, 08h-18h");
+  const [urgence, setUrgence] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [galleryPhotos, setGalleryPhotos] = useState([]);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const digits10 = (v) => v.replace(/\D/g, "").slice(0, 10);
+
+  const addGalleryFile = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3 - galleryPhotos.length);
+    setGalleryPhotos((g) => [...g, ...files].slice(0, 3));
+  };
+
+  const submit = async () => {
+    setErr("");
+    if (!fullName || !phone || !email || !password) { setErr("Merci de remplir tous les champs obligatoires (*)."); return; }
+    if (password !== confirmPassword) { setErr("Les mots de passe ne correspondent pas."); return; }
+    if (password.length < 8) { setErr("Le mot de passe doit contenir au moins 8 caractères."); return; }
+    if (!actName || !description || !zone) { setErr("Merci de compléter les informations de votre activité."); return; }
+
+    setBusy(true);
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+    if (error) { setErr(error.message); setBusy(false); return; }
+
+    if (!data.session) {
+      setStep("pendingConfirm");
+      setBusy(false);
+      return;
+    }
+
+    const userId = data.session.user.id;
+    let photo_url = null;
+    if (profilePhoto) {
+      try { photo_url = await api.uploadPhoto(profilePhoto); }
+      catch (e) { setErr("Compte créé, mais erreur photo : " + e.message + " — tu peux l'ajouter plus tard depuis ton tableau de bord."); }
+    }
+    const availabilityText = availability + (urgence ? " · Service d'urgence 24h/24" : "");
+    const payload = {
+      name: actName, category_id: categoryId, description, zone,
+      phone, whatsapp: sameWhatsapp ? phone : digits10(whatsappOther),
+      price_text: "", availability: availabilityText, photo_url,
+      added_by: userId, verified_field: false, validated: false, lat: null, lng: null,
+    };
+    const { data: inserted, error: insErr } = await api.insertProvider(payload);
+    if (insErr) { setErr(insErr.message); setBusy(false); return; }
+
+    if (galleryPhotos.length && inserted && inserted.id) {
+      const providerId = inserted.id;
+      for (let i = 0; i < galleryPhotos.length; i++) {
+        try {
+          const url = await api.uploadPhoto(galleryPhotos[i]);
+          await api.addGalleryPhoto(providerId, url, i);
+        } catch (e) { /* photo secondaire optionnelle, on continue */ }
+      }
+    }
+    setBusy(false);
+    onDone();
+  };
+
+  if (step === "pendingConfirm") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: T.bg }}>
+        <Icon name="checkCircle" size={36} color={T.greenDeep} filled />
+        <div className="font-bold text-base mt-3 mb-2" style={{ color: T.ink }}>Compte créé !</div>
+        <p className="text-sm" style={{ color: T.mute }}>Vérifie ta boîte mail ({email}) et clique sur le lien de confirmation, puis reconnecte-toi pour finaliser l'inscription de ton activité.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-5">
+      <div className="flex flex-col items-center text-center mb-5">
+        <div className="rounded-full flex items-center justify-center mb-3" style={{ width: 56, height: 56, background: "#FBE0C4" }}>
+          <Icon name="store" size={26} color={T.orange} />
+        </div>
+        <div className="font-extrabold text-lg" style={{ color: T.ink }}>Créez votre compte et votre activité</div>
+        <p className="text-xs mt-1" style={{ color: T.mute }}>Remplissez les informations ci-dessous pour créer votre profil et commencer à recevoir des clients à Dabakala.</p>
+      </div>
+
+      <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="rounded-full flex items-center justify-center font-bold text-white text-[11px]" style={{ width: 20, height: 20, background: T.blue }}>1</span>
+          <span className="text-xs font-bold" style={{ color: T.blue }}>MES INFORMATIONS</span>
+        </div>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Nom complet *</label>
+        <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ex : Koffi Jean" className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Numéro de téléphone *</label>
+        <input value={phone} onChange={(e) => setPhone(digits10(e.target.value))} placeholder="0712345678" inputMode="numeric" maxLength={10} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Adresse e-mail *</label>
+        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="exemple@email.com" className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Mot de passe *</label>
+        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Minimum 8 caractères" className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Confirmer le mot de passe *</label>
+        <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} type="password" className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+      </div>
+
+      <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="rounded-full flex items-center justify-center font-bold text-white text-[11px]" style={{ width: 20, height: 20, background: T.greenDeep }}>2</span>
+          <span className="text-xs font-bold" style={{ color: T.greenDeep }}>MON ACTIVITÉ</span>
+        </div>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Nom de votre activité *</label>
+        <input value={actName} onChange={(e) => setActName(e.target.value)} placeholder="Ex : Koffi Plomberie" className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Catégorie d'activité *</label>
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }}>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Description courte de votre activité *</label>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 150))} rows={3} placeholder="Décrivez brièvement ce que vous faites…" className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none resize-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <div className="text-right text-[10px] mb-2.5" style={{ color: T.mute }}>{description.length}/150</div>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Zone d'intervention *</label>
+        <input value={zone} onChange={(e) => setZone(e.target.value)} list="dabakala-zones" placeholder="Ex : Quartier Résidentiel" className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+      </div>
+
+      <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="rounded-full flex items-center justify-center font-bold text-white text-[11px]" style={{ width: 20, height: 20, background: T.orange }}>3</span>
+          <span className="text-xs font-bold" style={{ color: T.orange }}>COMMENT LES CLIENTS VOUS CONTACTENT</span>
+        </div>
+        <label className="text-xs font-semibold block mb-1.5" style={{ color: T.mute }}>WhatsApp *</label>
+        <label className="flex items-center gap-2 text-sm mb-1.5" style={{ color: T.ink }}>
+          <input type="radio" checked={sameWhatsapp} onChange={() => setSameWhatsapp(true)} /> Utiliser ce numéro : {phone || "—"}
+        </label>
+        <label className="flex items-center gap-2 text-sm mb-1.5" style={{ color: T.ink }}>
+          <input type="radio" checked={!sameWhatsapp} onChange={() => setSameWhatsapp(false)} /> Utiliser un autre numéro
+        </label>
+        {!sameWhatsapp && (
+          <input value={whatsappOther} onChange={(e) => setWhatsappOther(digits10(e.target.value))} placeholder="Numéro WhatsApp" inputMode="numeric" maxLength={10} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        )}
+        <label className="text-xs font-semibold mt-2 block" style={{ color: T.mute }}>Disponibilité</label>
+        <input value={availability} onChange={(e) => setAvailability(e.target.value)} className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="flex items-center gap-2 text-xs font-medium mt-2" style={{ color: T.ink }}>
+          <input type="checkbox" checked={urgence} onChange={(e) => setUrgence(e.target.checked)} /> Service d'urgence 24h/24
+        </label>
+      </div>
+
+      <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="rounded-full flex items-center justify-center font-bold text-white text-[11px]" style={{ width: 20, height: 20, background: "#7B4FE0" }}>4</span>
+          <span className="text-xs font-bold" style={{ color: "#7B4FE0" }}>PRÉSENTATION DE VOTRE ACTIVITÉ</span>
+        </div>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Photo de profil / logo</label>
+        <input type="file" accept="image/*" onChange={(e) => setProfilePhoto(e.target.files[0] || null)} className="w-full mt-1 mb-2.5 text-xs" />
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Photos de votre activité (1 à 3, optionnel)</label>
+        <input type="file" accept="image/*" onChange={addGalleryFile} disabled={galleryPhotos.length >= 3} className="w-full mt-1 text-xs" />
+        {galleryPhotos.length > 0 && <div className="text-[10px] mt-1" style={{ color: T.mute }}>{galleryPhotos.length}/3 photo(s) sélectionnée(s)</div>}
+      </div>
+
+      <div className="rounded-xl px-3 py-2.5 text-[11px] font-medium mb-3" style={{ background: "#EAF0FB", color: T.navy }}>
+        Votre profil sera vérifié par notre équipe avant d'être publié sur Dabakala Services.
+      </div>
+      {err && <div className="text-xs font-semibold mb-2" style={{ color: T.orange }}>{err}</div>}
+      <button onClick={submit} disabled={busy} className="w-full rounded-xl py-3 font-bold text-white" style={{ background: T.orange, opacity: busy ? 0.6 : 1 }}>
+        {busy ? "Création en cours…" : "Créer mon profil gratuitement"}
+      </button>
+    </div>
+  );
+}
+
 function ProviderOnboarding({ session, categories, onClose, onDone }) {
   const [showAuth, setShowAuth] = useState(false);
   const [form, setForm] = useState({ name: "", category_id: categories[0]?.id || "reparation", zone: "", phone: "", whatsapp: "", description: "", price_text: "" });
@@ -2007,8 +2180,8 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
           <button onClick={onClose} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
           <span className="font-bold text-sm" style={{ color: T.ink }}>Inscrire mon activité</span>
         </div>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <div className="w-full"><AuthForm onDone={() => {}} /></div>
+        <div className="flex-1 overflow-y-auto">
+          <ProviderSignupForm categories={categories} onDone={onDone} />
         </div>
       </div>
     );
@@ -2195,6 +2368,10 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
       <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
         <button onClick={onClose} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
         <span className="font-bold text-sm flex-1" style={{ color: T.ink }}>Tableau de bord prestataire</span>
+        <NotificationBell
+          items={(requests || []).map((r) => ({ id: "req-" + r.id, time: r.created_at, text: `💬 Nouvelle demande de ${r.profiles?.full_name || "un client"} sur « ${r.providers ? r.providers.name : ""} ».` }))}
+          storageKey={`dabakala:notif:provider:${session.user.id}`}
+        />
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {myProviders.length > 1 && (
@@ -2278,24 +2455,15 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
       </div>
 
       <div className="flex" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}` }}>
-        {[["home", "home", "Accueil"], ["requests", "chat", "Demandes"]].map(([id, icon, label]) => (
-          <button key={id} onClick={() => setTab(id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+        {[["home", "home", "Accueil"], ["requests", "chat", "Demandes"], ["avis", "star", "Avis"]].map(([id, icon, label]) => (
+          <button key={id} onClick={() => setTab(id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5" style={{ position: "relative" }}>
             <Icon name={icon} size={20} color={tab === id ? T.navy : T.mute} />
             <span className="text-[10px] font-semibold" style={{ color: tab === id ? T.navy : T.mute }}>{label}</span>
             {id === "requests" && newReqs > 0 && (
-              <span className="absolute rounded-full font-bold" style={{ marginTop: -22, marginLeft: 14, background: T.orange, color: "#fff", fontSize: 8, padding: "1px 4px" }}>{newReqs}</span>
+              <span className="absolute rounded-full font-bold" style={{ top: 2, right: "28%", background: T.orange, color: "#fff", fontSize: 8, padding: "1px 4px" }}>{newReqs}</span>
             )}
           </button>
         ))}
-        <button onClick={onOpenOnboarding} className="flex flex-col items-center justify-center" style={{ width: 56 }}>
-          <div className="rounded-full flex items-center justify-center" style={{ width: 40, height: 40, background: T.orange, marginTop: -14, boxShadow: "0 4px 10px rgba(255,152,0,0.4)" }}>
-            <Icon name="wrench" size={18} color="#fff" />
-          </div>
-        </button>
-        <button onClick={() => setTab("avis")} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
-          <Icon name="star" size={20} color={tab === "avis" ? T.navy : T.mute} />
-          <span className="text-[10px] font-semibold" style={{ color: tab === "avis" ? T.navy : T.mute }}>Avis</span>
-        </button>
         <button onClick={onClose} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
           <Icon name="user" size={20} color={T.mute} />
           <span className="text-[10px] font-semibold" style={{ color: T.mute }}>Profil</span>
