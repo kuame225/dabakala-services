@@ -209,6 +209,11 @@ const ICON_PATHS = {
   logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
   moon: <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />,
   sun: <><circle cx="12" cy="12" r="4.5" /><line x1="12" y1="2.5" x2="12" y2="4.5" /><line x1="12" y1="19.5" x2="12" y2="21.5" /><line x1="4.2" y1="4.2" x2="5.6" y2="5.6" /><line x1="18.4" y1="18.4" x2="19.8" y2="19.8" /><line x1="2.5" y1="12" x2="4.5" y2="12" /><line x1="19.5" y1="12" x2="21.5" y2="12" /><line x1="4.2" y1="19.8" x2="5.6" y2="18.4" /><line x1="18.4" y1="5.6" x2="19.8" y2="4.2" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,
+  users: <><circle cx="9" cy="8" r="3.2" /><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6" /><circle cx="17" cy="9" r="2.6" /><path d="M15 14.2c2.6.5 4.5 2.6 4.5 5.3" /></>,
+  gift: <><rect x="3" y="8.5" width="18" height="4" rx="0.8" /><rect x="4.5" y="12.5" width="15" height="8" rx="0.8" /><line x1="12" y1="8.5" x2="12" y2="20.5" /><path d="M12 8.5c0-2.5-2-4.5-3.8-4-1.4.4-1.7 2.6.3 3.4.9.4 2 .6 3.5.6z" /><path d="M12 8.5c0-2.5 2-4.5 3.8-4 1.4.4 1.7 2.6-.3 3.4-.9.4-2 .6-3.5.6z" /></>,
+  store: <><path d="M3 9.5 4.5 4h15L21 9.5" /><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" /><path d="M5 9.8V20h14V9.8" /><rect x="9.5" y="14" width="5" height="6" /></>,
+  chevronRight: <polyline points="9 6 15 12 9 18" />,
   x: <><line x1="6" y1="6" x2="18" y2="18" /><line x1="6" y1="18" x2="18" y2="6" /></>,
 };
 
@@ -308,6 +313,13 @@ const api = {
   async fetchRecentReviews() {
     const { data, error } = await supabase.from("reviews").select("*, providers(name, added_by)").order("created_at", { ascending: false }).limit(50);
     return error ? [] : data;
+  },
+  async fetchMyReviews(userId) {
+    const { data, error } = await supabase.from("reviews").select("*, providers(name, category_id)").eq("user_id", userId).order("created_at", { ascending: false });
+    return error ? [] : data;
+  },
+  async updateFullName(userId, fullName) {
+    return supabase.from("profiles").update({ full_name: fullName }).eq("id", userId);
   },
   async upsertReview(providerId, userId, rating, comment) {
     return supabase.from("reviews").upsert(
@@ -422,20 +434,28 @@ function AuthForm({ onDone }) {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    setError(""); setBusy(true);
+    setError(""); setInfo(""); setBusy(true);
     try {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        onDone && onDone();
       } else {
-        const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
         if (error) throw error;
-        setError("Compte créé. Un administrateur doit vous attribuer le rôle agent/admin avant l'accès.");
+        if (data.session) {
+          // Confirmation email désactivée côté Supabase : compte actif immédiatement.
+          onDone && onDone();
+        } else {
+          // Confirmation email requise : pas de session tant que le lien n'est pas cliqué.
+          setInfo("Compte créé ! Vérifie ta boîte mail (" + email + ") et clique sur le lien de confirmation, puis reviens te connecter ici.");
+          setMode("login");
+        }
       }
-      onDone && onDone();
     } catch (e) {
       setError(e.message || "Erreur");
     } finally {
@@ -475,11 +495,12 @@ function AuthForm({ onDone }) {
           className="w-full mb-2 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
         <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" type="password"
           className="w-full mb-3 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        {info && <div className="text-xs mb-2 font-semibold" style={{ color: T.greenDeep }}>{info}</div>}
         {error && <div className="text-xs mb-2" style={{ color: T.orange }}>{error}</div>}
         <button onClick={submit} disabled={busy} className="w-full rounded-xl py-2.5 font-semibold text-white" style={{ background: T.navy }}>
           {busy ? "…" : mode === "login" ? "Se connecter" : "S'inscrire"}
         </button>
-        <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }} className="w-full mt-2 text-xs font-semibold" style={{ color: T.blue }}>
+        <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setInfo(""); }} className="w-full mt-2 text-xs font-semibold" style={{ color: T.blue }}>
           {mode === "login" ? "Pas de compte ? S'inscrire" : "Déjà un compte ? Se connecter"}
         </button>
       </div>
@@ -1078,18 +1099,50 @@ function ProviderSheet({ provider, categories, session, onBack }) {
   );
 }
 
-function ProfileTab({ session, onProposeService, theme, setTheme }) {
+function ProfileRow({ icon, title, subtitle, value, danger, onClick }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-3.5 py-3 text-left" style={{ borderBottom: `1px solid ${T.line}` }}>
+      <Icon name={icon} size={18} color={danger ? "#B3261E" : T.mute} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold" style={{ color: danger ? "#B3261E" : T.ink }}>{title}</div>
+        {subtitle && <div className="text-[11px]" style={{ color: T.mute }}>{subtitle}</div>}
+      </div>
+      {value && <span className="text-xs" style={{ color: T.mute }}>{value}</span>}
+      {!danger && <Icon name="chevronRight" size={16} color={T.mute} />}
+    </button>
+  );
+}
+
+function ProfileSubScreen({ title, onBack, children }) {
+  return (
+    <div className="h-full flex flex-col" style={{ background: T.bg }}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={onBack} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
+        <span className="font-bold text-sm" style={{ color: T.ink }}>{title}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
+    </div>
+  );
+}
+
+function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) {
   const [showAuth, setShowAuth] = useState(false);
   const [profile, setProfile] = useState(null);
   const [favCount, setFavCount] = useState(null);
   const [myProviders, setMyProviders] = useState([]);
+  const [myReviews, setMyReviews] = useState(null);
+  const [subView, setSubView] = useState(null); // null | "avis" | "infos" | "apropos"
+  const [nameInput, setNameInput] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     if (!session) return;
-    api.getProfile(session.user.id).then(setProfile);
+    api.getProfile(session.user.id).then((p) => { setProfile(p); setNameInput(p?.full_name || ""); });
     api.fetchFavoriteProviders(session.user.id).then((f) => setFavCount(f.length));
     api.fetchProviders().then((all) => setMyProviders(all.filter((p) => p.added_by === session.user.id)));
-  }, [session]);
+    api.fetchMyReviews(session.user.id).then(setMyReviews);
+  };
+  useEffect(load, [session]);
 
   if (!session) {
     return (
@@ -1120,45 +1173,93 @@ function ProfileTab({ session, onProposeService, theme, setTheme }) {
 
   const name = profile?.full_name || session.user.email;
 
+  if (subView === "avis") {
+    return (
+      <ProfileSubScreen title="Mes avis" onBack={() => setSubView(null)}>
+        {myReviews === null ? (
+          <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} height={60} radius={16} />)}</div>
+        ) : myReviews.length === 0 ? (
+          <div className="text-sm text-center py-8" style={{ color: T.mute }}>Tu n'as encore laissé aucun avis.</div>
+        ) : (
+          <div className="space-y-2">
+            {myReviews.map((r) => (
+              <div key={r.id} className="rounded-2xl p-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+                <div className="font-bold text-sm" style={{ color: T.ink }}>{r.providers ? r.providers.name : "Prestataire"}</div>
+                <div className="mt-1"><StarRow rating={r.rating} size={12} /></div>
+                {r.comment && <p className="text-xs mt-1.5" style={{ color: T.mute }}>{r.comment}</p>}
+                <div className="text-[10px] mt-1.5" style={{ color: T.mute }}>{timeAgo(r.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ProfileSubScreen>
+    );
+  }
+
+  if (subView === "infos") {
+    return (
+      <ProfileSubScreen title="Informations personnelles" onBack={() => setSubView(null)}>
+        <div className="rounded-2xl p-4" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Nom complet</label>
+          <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+          <label className="text-xs font-semibold mt-3 block" style={{ color: T.mute }}>Email</label>
+          <div className="w-full mt-1 rounded-lg px-3 py-2 text-sm" style={{ background: T.bg, color: T.mute }}>{session.user.email}</div>
+          <button onClick={async () => { setSavingName(true); await api.updateFullName(session.user.id, nameInput); setSavingName(false); load(); setSubView(null); }}
+            disabled={savingName} className="w-full mt-4 rounded-xl py-2.5 font-bold text-white" style={{ background: T.navy, opacity: savingName ? 0.6 : 1 }}>
+            {savingName ? "…" : "Enregistrer"}
+          </button>
+        </div>
+      </ProfileSubScreen>
+    );
+  }
+
+  if (subView === "apropos") {
+    return (
+      <ProfileSubScreen title="À propos" onBack={() => setSubView(null)}>
+        <div className="rounded-2xl p-4 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <div className="font-extrabold text-base mb-1" style={{ color: T.navy }}>Dabakala <span style={{ color: T.orange }}>Services</span></div>
+          <div className="text-xs mb-3" style={{ color: T.mute }}>Version 1.0.0</div>
+          <p className="text-sm leading-relaxed" style={{ color: T.ink }}>
+            Le rendez-vous des services de confiance à Dabakala. Une plateforme locale qui connecte les habitants aux prestataires de la ville — plomberie, beauté, transport, informatique et bien plus.
+          </p>
+        </div>
+      </ProfileSubScreen>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto px-4 py-5" style={{ background: T.bg }}>
-      <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
-        <div className="rounded-full flex items-center justify-center font-bold text-white" style={{ width: 52, height: 52, background: T.navy, fontSize: 18 }}>
+      <button onClick={() => setSubView("infos")} className="w-full rounded-2xl p-4 flex items-center gap-3 text-left" style={{ background: T.navy }}>
+        <div className="rounded-full flex items-center justify-center font-bold" style={{ width: 52, height: 52, background: "rgba(255,255,255,0.2)", color: "#fff", fontSize: 18, flexShrink: 0 }}>
           {(name || "U")[0].toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm truncate" style={{ color: T.ink }}>{name}</div>
-          <div className="text-xs truncate" style={{ color: T.mute }}>{session.user.email}</div>
-          {profile && (
-            <span className="inline-block mt-1 rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: T.bg, color: T.navy }}>{profile.role}</span>
-          )}
+          <div className="font-bold text-sm truncate" style={{ color: "#fff" }}>{name}</div>
+          <span className="inline-block mt-1 rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: "rgba(255,255,255,0.2)", color: "#fff" }}>{profile ? profile.role : "…"}</span>
+          <div className="text-xs truncate mt-1" style={{ color: "rgba(255,255,255,0.8)" }}>{session.user.email}</div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mt-4">
-        <div className="rounded-2xl p-3 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
-          <div className="flex justify-center mb-1"><Icon name="heart" size={18} color={T.orange} filled /></div>
-          <div className="font-bold text-sm" style={{ color: T.ink }}>{favCount === null ? "…" : favCount}</div>
-          <div className="text-[10px]" style={{ color: T.mute }}>Favoris</div>
-        </div>
-        <div className="rounded-2xl p-3 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
-          <div className="flex justify-center mb-1"><Icon name="shieldCheck" size={18} color={T.greenDeep} /></div>
-          <div className="font-bold text-sm" style={{ color: T.ink }}>{profile ? profile.role : "…"}</div>
-          <div className="text-[10px]" style={{ color: T.mute }}>Rôle du compte</div>
-        </div>
-      </div>
-
-      <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="w-full mt-4 flex items-center justify-between rounded-2xl p-3.5" style={{ background: "var(--card)", boxShadow: T.shadow }}>
-        <div className="flex items-center gap-2.5">
-          <Icon name={theme === "dark" ? "moon" : "sun"} size={17} color={T.navy} />
-          <span className="text-sm font-semibold" style={{ color: T.ink }}>Mode sombre</span>
-        </div>
-        <div style={{ width: 40, height: 22, borderRadius: 999, background: theme === "dark" ? T.navy : T.line, position: "relative", flexShrink: 0 }}>
-          <div style={{ width: 18, height: 18, borderRadius: 999, background: "#fff", position: "absolute", top: 2, left: theme === "dark" ? 20 : 2, transition: "left 0.15s ease" }} />
-        </div>
+        <Icon name="chevronRight" size={18} color="rgba(255,255,255,0.8)" />
       </button>
 
-      <button onClick={onProposeService} className="w-full mt-3 rounded-2xl p-4 flex items-center gap-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow, border: `1.5px solid ${T.line}` }}>
+      <div className="grid grid-cols-3 gap-2.5 mt-4">
+        <div className="rounded-2xl p-3 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <div className="flex justify-center mb-1"><Icon name="heart" size={17} color={T.orange} filled /></div>
+          <div className="font-bold text-sm" style={{ color: T.ink }}>{favCount === null ? "…" : favCount}</div>
+          <div className="text-[9.5px]" style={{ color: T.mute }}>Favoris</div>
+        </div>
+        <div className="rounded-2xl p-3 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <div className="flex justify-center mb-1"><Icon name="star" size={17} color={T.gold} filled /></div>
+          <div className="font-bold text-sm" style={{ color: T.ink }}>{myReviews === null ? "…" : myReviews.length}</div>
+          <div className="text-[9.5px]" style={{ color: T.mute }}>Avis donnés</div>
+        </div>
+        <div className="rounded-2xl p-3 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <div className="flex justify-center mb-1"><Icon name="store" size={17} color={T.blue} /></div>
+          <div className="font-bold text-sm" style={{ color: T.ink }}>{myProviders.length}</div>
+          <div className="text-[9.5px]" style={{ color: T.mute }}>Mes fiches</div>
+        </div>
+      </div>
+
+      <button onClick={onProposeService} className="w-full mt-4 rounded-2xl p-4 flex items-center gap-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow, border: `1.5px solid ${T.line}` }}>
         <div className="rounded-xl flex items-center justify-center" style={{ width: 40, height: 40, background: T.orange, flexShrink: 0 }}>
           <Icon name="wrench" size={18} color="#fff" />
         </div>
@@ -1168,26 +1269,46 @@ function ProfileTab({ session, onProposeService, theme, setTheme }) {
         </div>
       </button>
 
+      <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>Mon activité</div>
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <ProfileRow icon="heart" title="Mes favoris" subtitle="Prestataires que vous avez enregistrés" onClick={() => onNavigate && onNavigate("favorites")} />
+        <ProfileRow icon="star" title="Mes avis" subtitle="Avis que vous avez publiés" onClick={() => setSubView("avis")} />
+        <div style={{ borderBottom: "none" }}>
+          <ProfileRow icon="store" title="Mes fiches prestataire" subtitle={myProviders.length + " fiche(s)"} onClick={() => {}} />
+        </div>
+      </div>
+
       {myProviders.length > 0 && (
-        <div className="mt-5">
-          <div className="text-sm font-bold mb-2" style={{ color: T.ink }}>Mon activité</div>
-          <div className="space-y-2">
-            {myProviders.map((p) => (
-              <div key={p.id} className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
-                <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={40} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
-                  <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
-                </div>
+        <div className="space-y-2 mt-2">
+          {myProviders.map((p) => (
+            <div key={p.id} className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+              <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={40} />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
+                <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
 
-      <button onClick={() => supabase.auth.signOut()} className="w-full mt-5 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold" style={{ border: `1.5px solid #B3261E`, color: "#B3261E" }}>
-        <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
-      </button>
+      <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>Mon compte</div>
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <ProfileRow icon="user" title="Informations personnelles" subtitle="Gérez vos informations de compte" onClick={() => setSubView("infos")} />
+        <div className="flex items-center gap-3 px-3.5 py-3">
+          <Icon name={theme === "dark" ? "moon" : "sun"} size={18} color={T.mute} />
+          <div className="flex-1 text-sm font-semibold" style={{ color: T.ink }}>Mode sombre</div>
+          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} style={{ width: 40, height: 22, borderRadius: 999, background: theme === "dark" ? T.navy : T.line, position: "relative", flexShrink: 0 }}>
+            <div style={{ width: 18, height: 18, borderRadius: 999, background: "#fff", position: "absolute", top: 2, left: theme === "dark" ? 20 : 2, transition: "left 0.15s ease" }} />
+          </button>
+        </div>
+      </div>
+
+      <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>À propos</div>
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <ProfileRow icon="handshake" title="À propos de Dabakala Services" subtitle="Version 1.0.0" onClick={() => setSubView("apropos")} />
+        <ProfileRow icon="logout" title="Se déconnecter" danger onClick={() => supabase.auth.signOut()} />
+      </div>
     </div>
   );
 }
@@ -1254,7 +1375,7 @@ function UserHome({ providers, categories, session, onOpen, userTab, onNavigate,
   }
 
   if (userTab === "profile") {
-    return <ProfileTab session={session} onProposeService={onProposeService} theme={theme} setTheme={setTheme} />;
+    return <ProfileTab session={session} onProposeService={onProposeService} theme={theme} setTheme={setTheme} onNavigate={onNavigate} />;
   }
 
   if (userTab === "home") {
@@ -2413,8 +2534,10 @@ function App() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("dabakala:theme", theme);
   }, [theme]);
-  const [entryChoice, setEntryChoice] = useState(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [entryChoice, setEntryChoiceRaw] = useState(() => localStorage.getItem("dabakala:entryChoice"));
+  const setEntryChoice = (v) => { localStorage.setItem("dabakala:entryChoice", v); setEntryChoiceRaw(v); };
+  const [showOnboarding, setShowOnboardingRaw] = useState(() => localStorage.getItem("dabakala:showOnboarding") === "1");
+  const setShowOnboarding = (v) => { localStorage.setItem("dabakala:showOnboarding", v ? "1" : "0"); setShowOnboardingRaw(v); };
   const [userTab, setUserTab] = useState("home");
   const [menuOpen, setMenuOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -2495,30 +2618,98 @@ function App() {
 
   if (!entryChoice) {
     return (
-      <div className="w-full flex flex-col items-center justify-center px-6" style={{ height: "100dvh", background: T.bg, maxWidth: 480, margin: "0 auto" }}>
-        <div className="rounded-2xl flex items-center justify-center mb-5" style={{ width: 64, height: 64, background: T.navy }}>
-          <Icon name="handshake" size={30} color="#fff" strokeWidth={1.6} />
+      <div className="w-full flex flex-col" style={{ height: "100dvh", background: T.bg, maxWidth: 480, margin: "0 auto" }}>
+        <div className="flex-1 overflow-y-auto px-5 py-6">
+          <div className="flex flex-col items-center text-center mb-5">
+            <div className="rounded-full flex items-center justify-center mb-3" style={{ width: 76, height: 76, background: "#fff", boxShadow: T.shadow, overflow: "hidden" }}>
+              <img src="./banner-hero.jpg" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+            <div className="font-extrabold text-lg leading-tight">
+              <span style={{ color: T.navy }}>DABAKALA</span> <span style={{ color: T.orange }}>SERVICES</span>
+            </div>
+            <div className="text-xs mt-1" style={{ color: T.mute }}>Le rendez-vous des services de confiance à Dabakala</div>
+          </div>
+
+          <div className="text-center mb-1.5">
+            <span className="font-extrabold text-xl" style={{ color: T.ink }}>Que souhaitez-vous faire </span>
+            <span className="font-extrabold text-xl" style={{ color: T.orange }}>aujourd'hui ?</span>
+          </div>
+          <p className="text-xs text-center mb-5" style={{ color: T.mute }}>
+            Dabakala Services connecte les habitants et les prestataires pour des services rapides et fiables.
+          </p>
+
+          <button onClick={() => setEntryChoice("search")} className="w-full rounded-2xl p-4 text-left mb-3" style={{ background: "linear-gradient(180deg, #EAF0FB 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
+            <div className="flex flex-col items-center text-center">
+              <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 56, height: 56, background: "#DCE6FA" }}>
+                <Icon name="search" size={26} color={T.blue} />
+              </div>
+              <div className="font-extrabold text-base" style={{ color: T.ink }}>Je recherche<br />un service</div>
+              <div className="text-xs mt-1.5" style={{ color: T.mute }}>Trouvez rapidement le prestataire qu'il vous faut parmi nos catégories.</div>
+              <div className="flex items-center gap-2 mt-3">
+                {["wrench", "car", "scissors", "utensils"].map((ic) => (
+                  <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "#DCE6FA" }}>
+                    <Icon name={ic} size={15} color={T.blue} />
+                  </div>
+                ))}
+              </div>
+              <div className="w-full mt-3 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" style={{ background: T.blue }}>
+                Rechercher <Icon name="chevronRight" size={14} color="#fff" />
+              </div>
+              <div className="flex items-center gap-1.5 mt-2.5 text-[11px] font-semibold" style={{ color: T.blue }}>
+                <Icon name="shieldCheck" size={12} color={T.blue} /> Des prestataires vérifiés à Dabakala
+              </div>
+            </div>
+          </button>
+
+          <button onClick={() => { setEntryChoice("provide"); setShowOnboarding(true); }} className="w-full rounded-2xl p-4 text-left mb-5" style={{ background: "linear-gradient(180deg, #FDEFE0 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
+            <div className="flex flex-col items-center text-center">
+              <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 56, height: 56, background: "#FBE0C4" }}>
+                <Icon name="store" size={26} color={T.orange} />
+              </div>
+              <div className="font-extrabold text-base" style={{ color: T.ink }}>Je propose<br />un service</div>
+              <div className="text-xs mt-1.5" style={{ color: T.mute }}>Inscrivez votre activité et développez votre clientèle à Dabakala.</div>
+              <div className="flex items-center gap-2 mt-3">
+                {["eye", "users", "gift", "checkCircle"].map((ic) => (
+                  <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "#FBE0C4" }}>
+                    <Icon name={ic} size={15} color={T.orange} />
+                  </div>
+                ))}
+              </div>
+              <div className="w-full mt-3 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" style={{ background: T.orange }}>
+                Inscrire mon activité gratuitement <Icon name="chevronRight" size={14} color="#fff" />
+              </div>
+              <div className="flex items-center gap-1.5 mt-2.5 text-[11px] font-semibold" style={{ color: T.orange }}>
+                <Icon name="shieldCheck" size={12} color={T.orange} /> Inscription rapide et sans frais
+              </div>
+            </div>
+          </button>
+
+          <div className="rounded-2xl p-4 mb-5" style={{ background: "#fff", boxShadow: T.shadow }}>
+            <div className="font-bold text-sm mb-2 text-center" style={{ color: T.ink }}>Dabakala Services, c'est :</div>
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-[11px] font-medium" style={{ color: T.mute }}>
+              {["Des prestataires locaux", "De confiance", "Des services pour tous", "Une plateforme 100% Dabakala"].map((t) => (
+                <span key={t} className="flex items-center gap-1"><Icon name="checkCircle" size={12} color={T.greenDeep} /> {t}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 mb-4">
+            <div className="flex-1 h-px" style={{ background: T.line }} />
+            <span className="text-[11px] font-semibold" style={{ color: T.mute }}>Déjà inscrit ?</span>
+            <div className="flex-1 h-px" style={{ background: T.line }} />
+          </div>
+          <button onClick={() => { setEntryChoice("search"); setUserTab("profile"); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm" style={{ border: `1.5px solid ${T.blue}`, color: T.blue }}>
+            <Icon name="user" size={16} color={T.blue} /> Se connecter à mon compte
+          </button>
         </div>
-        <div className="font-extrabold text-xl text-center mb-1" style={{ color: T.ink }}>Que souhaitez-vous faire<br />aujourd'hui ?</div>
-        <div className="text-xs text-center mb-6" style={{ color: T.mute }}>Dabakala Services</div>
-        <button onClick={() => setEntryChoice("search")} className="w-full rounded-2xl p-4 flex items-center gap-3 mb-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow, border: `1.5px solid ${T.line}` }}>
-          <div className="rounded-xl flex items-center justify-center" style={{ width: 44, height: 44, background: T.blue, flexShrink: 0 }}>
-            <Icon name="search" size={20} color="#fff" />
-          </div>
-          <div>
-            <div className="font-bold text-sm" style={{ color: T.ink }}>Je recherche un service</div>
-            <div className="text-xs" style={{ color: T.mute }}>Trouver un prestataire près de chez vous</div>
-          </div>
-        </button>
-        <button onClick={() => { setEntryChoice("provide"); setShowOnboarding(true); }} className="w-full rounded-2xl p-4 flex items-center gap-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow, border: `1.5px solid ${T.line}` }}>
-          <div className="rounded-xl flex items-center justify-center" style={{ width: 44, height: 44, background: T.orange, flexShrink: 0 }}>
-            <Icon name="wrench" size={20} color="#fff" />
-          </div>
-          <div>
-            <div className="font-bold text-sm" style={{ color: T.ink }}>Je propose un service</div>
-            <div className="text-xs" style={{ color: T.mute }}>Inscrire mon activité dans l'annuaire</div>
-          </div>
-        </button>
+        <div className="flex" style={{ background: "#fff", borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+          {[["home", "Accueil"], ["search", "Recherche"], ["favorites", "Favoris"], ["profile", "Profil"]].map(([id, label]) => (
+            <button key={id} onClick={() => { setEntryChoice("search"); setUserTab(id); }} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+              <Icon name={id === "home" ? "home" : id === "search" ? "search" : id === "favorites" ? "heart" : "user"} size={20} color={T.mute} />
+              <span className="text-[10px] font-semibold" style={{ color: T.mute }}>{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
