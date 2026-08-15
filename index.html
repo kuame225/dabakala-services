@@ -1971,6 +1971,72 @@ function NotificationBell({ items, storageKey }) {
   );
 }
 
+function ProviderLandingScreen({ onBack, onStart, onLogin }) {
+  const benefits = [
+    { icon: "eye", color: T.blue, bg: "#DCE6FA", title: "Soyez visible", text: "Présentez votre activité, vos services et vos compétences aux habitants de Dabakala." },
+    { icon: "users", color: T.greenDeep, bg: "#DCF3E3", title: "Trouvez des clients", text: "Recevez des demandes et facilitez le contact avec vos futurs clients." },
+    { icon: "gift", color: T.orange, bg: "#FBE0C4", title: "Inscription gratuite", text: "Aucun frais d'inscription. Créez votre profil en quelques minutes." },
+  ];
+  return (
+    <div className="h-full overflow-y-auto" style={{ background: T.bg }}>
+      <div className="px-5 pt-4 pb-2">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-bold mb-4" style={{ color: T.blue }}>
+          <Icon name="chevronLeft" size={18} color={T.blue} /> Retour
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="rounded-full flex items-center justify-center" style={{ width: 56, height: 56, background: "#FBE0C4", flexShrink: 0 }}>
+            <Icon name="store" size={26} color={T.orange} />
+          </div>
+          <div className="rounded-2xl overflow-hidden" style={{ flex: 1, height: 90 }}>
+            <img src="./banner-hero.jpg" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+        </div>
+        <div className="mt-3 font-extrabold text-2xl leading-tight">
+          <span style={{ color: T.ink }}>JE PROPOSE</span><br /><span style={{ color: T.orange }}>UN SERVICE</span>
+        </div>
+        <p className="text-sm mt-2" style={{ color: T.mute }}>Inscrivez votre activité sur Dabakala Services et développez votre clientèle à Dabakala.</p>
+      </div>
+
+      <div className="px-5 space-y-2.5 mt-2">
+        {benefits.map((b) => (
+          <div key={b.title} className="rounded-2xl p-3.5 flex items-center gap-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="rounded-full flex items-center justify-center" style={{ width: 42, height: 42, background: b.bg, flexShrink: 0 }}>
+              <Icon name={b.icon} size={19} color={b.color} />
+            </div>
+            <div className="flex-1">
+              <div className="font-bold text-sm" style={{ color: T.ink }}>{b.title}</div>
+              <div className="text-xs mt-0.5" style={{ color: T.mute }}>{b.text}</div>
+            </div>
+            <Icon name="chevronRight" size={16} color={T.mute} />
+          </div>
+        ))}
+
+        <div className="rounded-2xl p-3.5 flex items-center gap-3" style={{ background: "#EAF0FB" }}>
+          <Icon name="shieldCheck" size={20} color={T.blue} />
+          <div className="flex-1">
+            <div className="font-bold text-xs" style={{ color: T.navy }}>Vos informations sont en sécurité</div>
+            <div className="text-[11px] mt-0.5" style={{ color: T.navy }}>Nous vérifions chaque prestataire pour garantir la confiance et la qualité de nos services.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 mt-5 pb-6">
+        <button onClick={onStart} className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 font-bold text-white" style={{ background: T.orange }}>
+          <Icon name="user" size={16} color="#fff" /> Commencer mon inscription <Icon name="chevronRight" size={16} color="#fff" />
+        </button>
+        <div className="flex items-center gap-2 my-3">
+          <div className="flex-1 h-px" style={{ background: T.line }} />
+          <span className="text-[11px] font-semibold" style={{ color: T.mute }}>ou</span>
+          <div className="flex-1 h-px" style={{ background: T.line }} />
+        </div>
+        <button onClick={onLogin} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm" style={{ border: `1.5px solid ${T.blue}`, color: T.blue }}>
+          <Icon name="user" size={16} color={T.blue} /> Déjà prestataire ? Se connecter
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProviderSignupForm({ categories, onDone }) {
   const [step, setStep] = useState("form"); // form | pendingConfirm
   const [fullName, setFullName] = useState("");
@@ -3068,6 +3134,7 @@ function App() {
   const [showOnboarding, setShowOnboardingRaw] = useState(() => localStorage.getItem("dabakala:showOnboarding") === "1");
   const setShowOnboarding = (v) => { localStorage.setItem("dabakala:showOnboarding", v ? "1" : "0"); setShowOnboardingRaw(v); };
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showProviderLanding, setShowProviderLanding] = useState(false);
   const [userTab, setUserTab] = useState("home");
   const [menuOpen, setMenuOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -3168,51 +3235,53 @@ function App() {
             Dabakala Services connecte les habitants et les prestataires pour des services rapides et fiables.
           </p>
 
-          <button onClick={() => setEntryChoice("search")} className="w-full rounded-2xl p-4 text-left mb-3" style={{ background: "linear-gradient(180deg, #EAF0FB 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
-            <div className="flex flex-col items-center text-center">
-              <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 56, height: 56, background: "#DCE6FA" }}>
-                <Icon name="search" size={26} color={T.blue} />
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            <button onClick={() => setEntryChoice("search")} className="rounded-2xl p-3 text-left" style={{ background: "linear-gradient(180deg, #EAF0FB 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
+              <div className="flex flex-col items-center text-center">
+                <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 48, height: 48, background: "#DCE6FA" }}>
+                  <Icon name="search" size={22} color={T.blue} />
+                </div>
+                <div className="font-extrabold text-sm" style={{ color: T.ink }}>Je recherche<br />un service</div>
+                <div className="text-[10.5px] mt-1.5" style={{ color: T.mute }}>Trouvez rapidement le prestataire qu'il vous faut.</div>
+                <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2.5">
+                  {["wrench", "car", "scissors", "utensils"].map((ic) => (
+                    <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 26, height: 26, background: "#DCE6FA" }}>
+                      <Icon name={ic} size={12} color={T.blue} />
+                    </div>
+                  ))}
+                </div>
+                <div className="w-full mt-2.5 flex items-center justify-center gap-1 rounded-xl py-2 font-bold text-xs text-white" style={{ background: T.blue }}>
+                  Rechercher <Icon name="chevronRight" size={12} color="#fff" />
+                </div>
+                <div className="flex items-center gap-1 mt-2 text-[9.5px] font-semibold text-center" style={{ color: T.blue }}>
+                  <Icon name="shieldCheck" size={10} color={T.blue} /> Prestataires vérifiés
+                </div>
               </div>
-              <div className="font-extrabold text-base" style={{ color: T.ink }}>Je recherche<br />un service</div>
-              <div className="text-xs mt-1.5" style={{ color: T.mute }}>Trouvez rapidement le prestataire qu'il vous faut parmi nos catégories.</div>
-              <div className="flex items-center gap-2 mt-3">
-                {["wrench", "car", "scissors", "utensils"].map((ic) => (
-                  <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "#DCE6FA" }}>
-                    <Icon name={ic} size={15} color={T.blue} />
-                  </div>
-                ))}
-              </div>
-              <div className="w-full mt-3 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" style={{ background: T.blue }}>
-                Rechercher <Icon name="chevronRight" size={14} color="#fff" />
-              </div>
-              <div className="flex items-center gap-1.5 mt-2.5 text-[11px] font-semibold" style={{ color: T.blue }}>
-                <Icon name="shieldCheck" size={12} color={T.blue} /> Des prestataires vérifiés à Dabakala
-              </div>
-            </div>
-          </button>
+            </button>
 
-          <button onClick={() => { setEntryChoice("provide"); setShowOnboarding(true); }} className="w-full rounded-2xl p-4 text-left mb-5" style={{ background: "linear-gradient(180deg, #FDEFE0 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
-            <div className="flex flex-col items-center text-center">
-              <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 56, height: 56, background: "#FBE0C4" }}>
-                <Icon name="store" size={26} color={T.orange} />
+            <button onClick={() => { setEntryChoice("provide"); setShowProviderLanding(true); }} className="rounded-2xl p-3 text-left" style={{ background: "linear-gradient(180deg, #FDEFE0 0%, #fff 55%)", border: `1px solid ${T.line}` }}>
+              <div className="flex flex-col items-center text-center">
+                <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 48, height: 48, background: "#FBE0C4" }}>
+                  <Icon name="store" size={22} color={T.orange} />
+                </div>
+                <div className="font-extrabold text-sm" style={{ color: T.ink }}>Je propose<br />un service</div>
+                <div className="text-[10.5px] mt-1.5" style={{ color: T.mute }}>Inscrivez votre activité à Dabakala.</div>
+                <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2.5">
+                  {["eye", "users", "gift", "checkCircle"].map((ic) => (
+                    <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 26, height: 26, background: "#FBE0C4" }}>
+                      <Icon name={ic} size={12} color={T.orange} />
+                    </div>
+                  ))}
+                </div>
+                <div className="w-full mt-2.5 flex items-center justify-center gap-1 rounded-xl py-2 font-bold text-xs text-white" style={{ background: T.orange }}>
+                  Inscrire mon activité <Icon name="chevronRight" size={12} color="#fff" />
+                </div>
+                <div className="flex items-center gap-1 mt-2 text-[9.5px] font-semibold text-center" style={{ color: T.orange }}>
+                  <Icon name="shieldCheck" size={10} color={T.orange} /> Gratuit et rapide
+                </div>
               </div>
-              <div className="font-extrabold text-base" style={{ color: T.ink }}>Je propose<br />un service</div>
-              <div className="text-xs mt-1.5" style={{ color: T.mute }}>Inscrivez votre activité et développez votre clientèle à Dabakala.</div>
-              <div className="flex items-center gap-2 mt-3">
-                {["eye", "users", "gift", "checkCircle"].map((ic) => (
-                  <div key={ic} className="rounded-full flex items-center justify-center" style={{ width: 34, height: 34, background: "#FBE0C4" }}>
-                    <Icon name={ic} size={15} color={T.orange} />
-                  </div>
-                ))}
-              </div>
-              <div className="w-full mt-3 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" style={{ background: T.orange }}>
-                Inscrire mon activité gratuitement <Icon name="chevronRight" size={14} color="#fff" />
-              </div>
-              <div className="flex items-center gap-1.5 mt-2.5 text-[11px] font-semibold" style={{ color: T.orange }}>
-                <Icon name="shieldCheck" size={12} color={T.orange} /> Inscription rapide et sans frais
-              </div>
-            </div>
-          </button>
+            </button>
+          </div>
 
           <div className="rounded-2xl p-4 mb-5" style={{ background: "#fff", boxShadow: T.shadow }}>
             <div className="font-bold text-sm mb-2 text-center" style={{ color: T.ink }}>Dabakala Services, c'est :</div>
@@ -3240,6 +3309,18 @@ function App() {
             </button>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (showProviderLanding) {
+    return (
+      <div className="w-full" style={{ height: "100dvh", background: T.bg, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
+        <ProviderLandingScreen
+          onBack={() => setShowProviderLanding(false)}
+          onStart={() => { setShowProviderLanding(false); setShowOnboarding(true); }}
+          onLogin={() => { setShowProviderLanding(false); setUserTab("profile"); }}
+        />
       </div>
     );
   }
