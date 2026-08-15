@@ -1,0 +1,2275 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dabakala Services</title>
+<meta name="description" content="L'annuaire de prestataires de confiance à Dabakala." />
+<meta name="theme-color" content="#0E2A56" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Dabakala" />
+<script>
+  window.__errors = [];
+  function renderBanner() {
+    if (!document.body) return;
+    var el = document.getElementById("debug-banner");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "debug-banner";
+      el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B3261E;color:#fff;padding:10px;font:12px monospace;white-space:pre-wrap;max-height:60vh;overflow:auto;";
+      document.body.appendChild(el);
+    }
+    el.textContent = window.__errors.join("\n\n---\n\n");
+  }
+  function showDebugBanner(msg) {
+    window.__errors.push(msg);
+    if (document.body) renderBanner();
+    else document.addEventListener("DOMContentLoaded", renderBanner);
+  }
+  window.addEventListener("error", function (e) {
+    var tag = e.target && e.target.tagName;
+    if (e.target && e.target !== window) {
+      if (tag === "SCRIPT" || tag === "LINK") {
+        showDebugBanner("Échec de chargement : " + (e.target.src || e.target.href));
+      }
+      // autres ressources (images, tuiles de carte...) : on ignore, non bloquant
+      return;
+    }
+    if (e.message) {
+      showDebugBanner("Erreur JS : " + e.message + "\n" + (e.filename || "") + ":" + (e.lineno || ""));
+    }
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    showDebugBanner("Promesse rejetée : " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      var root = document.getElementById("root");
+      if (root && root.children.length === 0 && window.__errors.length === 0) {
+        showDebugBanner("Aucune erreur détectée, mais l'app ne s'est pas affichée après 4 secondes. Vérifie ta connexion internet (les librairies se chargent depuis cdnjs.cloudflare.com) ou essaie de vider le cache du navigateur.");
+      }
+    }, 4000);
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+  });
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+if (!window.__dabakalaAppLoaded) {
+window.__dabakalaAppLoaded = true;
+(function () {
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ============================================================ */
+/* CONFIGURATION — à remplacer par les valeurs de ton projet     */
+/* Supabase (Paramètres du projet > API).                        */
+/* ============================================================ */
+const SUPABASE_URL = "https://cgtbalbposqbjgmenrkt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndGJhbGJwb3NxYmpnbWVucmt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTg1NzMsImV4cCI6MjEwMjI3NDU3M30.cv8eJcLJC2KGNu47u5Ep_Kn6vZG_MA2T-EpDDR_ZpaM";
+
+const isConfigured = !SUPABASE_URL.includes("YOUR-PROJECT") && !SUPABASE_ANON_KEY.includes("YOUR-ANON");
+const supabase = isConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* ------------------------------------------------------------------ */
+const T = {
+  navy: "#0D47A1", navyDeep: "#0A3576", blue: "#0D47A1", orange: "#FF9800",
+  gold: "#FF9800", green: "#2E7D32", greenDeep: "#2E7D32",
+  cream: "#F7F9FC", card: "#FFFFFF", ink: "#172033", mute: "#6B7280", line: "#E5E9F0",
+  bg: "#F7F9FC", shadow: "0 4px 16px rgba(13,71,161,0.13)",
+};
+
+const FALLBACK_CATEGORIES = [
+  { id: "reparation", label: "Réparation", emoji: "🔧", icon: "wrench", color: "#F5821F" },
+  { id: "maison", label: "Maison", emoji: "🏠", icon: "home", color: "#16A34A" },
+  { id: "transport", label: "Transport", emoji: "🚗", icon: "car", color: "#1B56DE" },
+  { id: "beaute", label: "Beauté", emoji: "💇", icon: "scissors", color: "#E93D82" },
+  { id: "alimentation", label: "Alimentation", emoji: "🍽️", icon: "utensils", color: "#F5A623" },
+  { id: "informatique", label: "Informatique", emoji: "💻", icon: "monitor", color: "#7B4FE0" },
+  { id: "commerce", label: "Commerce", emoji: "🛒", icon: "cart", color: "#17A2B8" },
+  { id: "formation", label: "Formation", emoji: "🎓", icon: "cap", color: "#2554C7" },
+  { id: "evenementiel", label: "Événementiel", emoji: "📸", icon: "camera", color: "#9333EA" },
+  { id: "agriculture", label: "Agriculture", emoji: "🌾", icon: "leaf", color: "#65A30D" },
+  { id: "nettoyage", label: "Nettoyage", emoji: "🧹", icon: "sparkles", color: "#06B6D4" },
+  { id: "automobile", label: "Automobile", emoji: "🔩", icon: "gauge", color: "#475569" },
+];
+
+const ZONES = ["Centre-ville", "Quartier Résidentiel", "Gare routière", "Marché central", "Quartier Nord"];
+const DABAKALA_CENTER = [8.367, -4.433]; // centre-ville de Dabakala, Côte d'Ivoire
+
+/* ------------------------------------------------------------------ */
+/* Icônes vectorielles (remplacent les emojis sur les écrans clés)     */
+/* ------------------------------------------------------------------ */
+const ICON_PATHS = {
+  search: <><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
+  sliders: <><line x1="4" y1="6" x2="20" y2="6" /><circle cx="14" cy="6" r="2" fill="currentColor" /><line x1="4" y1="12" x2="20" y2="12" /><circle cx="8" cy="12" r="2" fill="currentColor" /><line x1="4" y1="18" x2="20" y2="18" /><circle cx="16" cy="18" r="2" fill="currentColor" /></>,
+  chevronLeft: <polyline points="15 18 9 12 15 6" />,
+  mapPin: <><path d="M12 21s7-7.58 7-12A7 7 0 1 0 5 9c0 4.42 7 12 7 12z" /><circle cx="12" cy="9" r="2.4" /></>,
+  phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />,
+  chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 20l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />,
+  shieldCheck: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></>,
+  checkCircle: <><circle cx="12" cy="12" r="9" /><polyline points="8 12.5 10.5 15 16 9" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></>,
+  wallet: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M16 12h3" /><path d="M3 9h18" /></>,
+  wrench: <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.4-3.4a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 1 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.4 3.4z" />,
+  home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>,
+  car: <><path d="M4 16V11.5a1 1 0 0 1 .2-.6l2-2.7A2 2 0 0 1 7.8 7.5h8.4a2 2 0 0 1 1.6.8l2 2.7a1 1 0 0 1 .2.6V16" /><rect x="2.5" y="14" width="19" height="5" rx="1.5" /><circle cx="7" cy="19" r="1.6" /><circle cx="17" cy="19" r="1.6" /></>,
+  gauge: <><path d="M4.5 17a8.5 8.5 0 1 1 15 0" /><path d="M12 12.5 15 9" /><circle cx="12" cy="12.5" r="1.2" fill="currentColor" /></>,
+  scissors: <><circle cx="6" cy="6" r="2.3" /><circle cx="6" cy="18" r="2.3" /><line x1="8.1" y1="7.5" x2="20" y2="19" /><line x1="8.1" y1="16.5" x2="20" y2="5" /></>,
+  utensils: <><path d="M6 3v6a2 2 0 0 0 4 0V3" /><path d="M8 9v12" /><path d="M17 3c-1.7 0-3 2-3 4.5S15.3 12 17 12s3-2 3-4.5S18.7 3 17 3z" /><line x1="17" y1="12" x2="17" y2="21" /></>,
+  monitor: <><rect x="3" y="4" width="18" height="12" rx="1.5" /><line x1="8" y1="20" x2="16" y2="20" /><line x1="12" y1="16" x2="12" y2="20" /></>,
+  cart: <><circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M2.5 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.6L21 7H6" /></>,
+  cap: <><path d="M2 9.5 12 5l10 4.5-10 4.5-10-4.5z" /><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5" /></>,
+  camera: <><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13.5" r="3.5" /></>,
+  leaf: <path d="M5 20C3 12 8 4 20 4c0 12-8 17-15 16z M5 20c2-4 5-8 10-11" />,
+  sparkles: <path d="M12 3l1.4 4.2L18 8.6l-4.2 1.4L12 14l-1.4-4.2L6 8.6l4.6-1.4L12 3zM5 15l.8 2.4L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.6L5 15zM19 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z" />,
+  heart: <path d="M12 21s-6.7-4.3-9.3-8.7C1 8.9 2.7 5 6.2 5c2 0 3.6 1.3 4.4 2.8C11.4 6.3 13 5 15 5c3.5 0 5.2 3.9 3.5 7.3C18.7 16.7 12 21 12 21z" />,
+  share: <><circle cx="18" cy="5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="19" r="2.6" /><line x1="8.3" y1="10.6" x2="15.7" y2="6.4" /><line x1="8.3" y1="13.4" x2="15.7" y2="17.6" /></>,
+  star: <path d="M12 2.5l3.09 6.26 6.91 1.01-5 4.87 1.18 6.86L12 17.9l-6.18 3.6L7 14.64l-5-4.87 6.91-1.01L12 2.5z" />,
+  bell: <><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 8-2.5 8h17S18 14 18 8z" /><path d="M10.3 21a1.7 1.7 0 0 0 3.4 0" /></>,
+  handshake: <><path d="M11 12 8.5 9.5a2 2 0 0 0-2.8 0L3 12.2l5 5 1.5-1.5" /><path d="M13 12l2.5-2.5a2 2 0 0 1 2.8 0L21 12.2l-5 5-1.7-1.7" /><path d="M8 14.5l2 2a1.6 1.6 0 0 0 2.3 0 1.6 1.6 0 0 0 2.3 0l.9-.9" /></>,
+  menu: <><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></>,
+  user: <><circle cx="12" cy="8" r="3.4" /><path d="M5 20c0-3.6 3.1-6.2 7-6.2s7 2.6 7 6.2" /></>,
+  logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+  x: <><line x1="6" y1="6" x2="18" y2="18" /><line x1="6" y1="18" x2="18" y2="6" /></>,
+};
+
+function Icon({ name, size = 18, color = "currentColor", filled = false, strokeWidth = 2 }) {
+  const body = ICON_PATHS[name];
+  if (!body) return null;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : "none"} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      {body}
+    </svg>
+  );
+}
+
+function iconForCategory(id) {
+  const found = FALLBACK_CATEGORIES.find((c) => c.id === id);
+  return (found && found.icon) || "wrench";
+}
+
+/* ------------------------------------------------------------------ */
+/* Couche d'accès aux données — Supabase remplace localStorage        */
+/* ------------------------------------------------------------------ */
+const api = {
+  async fetchCategories() {
+    const { data, error } = await supabase.from("categories").select("*").order("sort_order");
+    return error ? FALLBACK_CATEGORIES : data;
+  },
+  async insertCategory(payload) {
+    return supabase.from("categories").insert(payload);
+  },
+  async updateCategory(id, payload) {
+    return supabase.from("categories").update(payload).eq("id", id);
+  },
+  async deleteCategory(id) {
+    return supabase.from("categories").delete().eq("id", id);
+  },
+  // Utilisateur non connecté ou rôle client : seules les fiches validées remontent (RLS).
+  // Agent/Admin connectés : le RLS laisse remonter aussi les fiches en attente.
+  async fetchProviders() {
+    const { data, error } = await supabase.from("providers").select("*").order("created_at", { ascending: false });
+    if (error) { console.error(error); return []; }
+    return data;
+  },
+  async insertProvider(payload) {
+    return supabase.from("providers").insert(payload).select().single();
+  },
+  async updateProvider(id, payload) {
+    return supabase.from("providers").update(payload).eq("id", id);
+  },
+  async deleteProvider(id) {
+    return supabase.from("providers").delete().eq("id", id);
+  },
+  async setValidated(id, value) {
+    return supabase.rpc("set_validated", { p_provider_id: id, p_value: value });
+  },
+  async setVerifiedField(id, value) {
+    return supabase.rpc("set_verified_field", { p_provider_id: id, p_value: value });
+  },
+  async getProfile(userId) {
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
+    return error ? null : data;
+  },
+  async uploadPhoto(file) {
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+    const { error } = await supabase.storage.from("provider-photos").upload(path, file);
+    if (error) throw error;
+    const { data } = supabase.storage.from("provider-photos").getPublicUrl(path);
+    return data.publicUrl;
+  },
+  async fetchReviews(providerId) {
+    const { data, error } = await supabase.from("reviews").select("*, profiles(full_name)").eq("provider_id", providerId).order("created_at", { ascending: false });
+    return error ? [] : data;
+  },
+  async fetchRecentReviews() {
+    const { data, error } = await supabase.from("reviews").select("*, providers(name, added_by)").order("created_at", { ascending: false }).limit(50);
+    return error ? [] : data;
+  },
+  async upsertReview(providerId, userId, rating, comment) {
+    return supabase.from("reviews").upsert(
+      { provider_id: providerId, user_id: userId, rating, comment },
+      { onConflict: "provider_id,user_id" }
+    );
+  },
+  async isFavorite(providerId, userId) {
+    const { data } = await supabase.from("favorites").select("*").eq("provider_id", providerId).eq("user_id", userId).single();
+    return !!data;
+  },
+  async fetchFavoriteProviders(userId) {
+    const { data, error } = await supabase.from("favorites").select("provider_id, providers(*)").eq("user_id", userId);
+    if (error || !data) return [];
+    return data.map((row) => row.providers).filter(Boolean);
+  },
+  async setFavorite(providerId, userId, value) {
+    if (value) return supabase.from("favorites").insert({ provider_id: providerId, user_id: userId });
+    return supabase.from("favorites").delete().eq("provider_id", providerId).eq("user_id", userId);
+  },
+  async fetchServices(providerId) {
+    const { data, error } = await supabase.from("provider_services").select("*").eq("provider_id", providerId).order("sort_order");
+    return error ? [] : data;
+  },
+  async addService(providerId, name, priceText, sortOrder) {
+    return supabase.from("provider_services").insert({ provider_id: providerId, name, price_text: priceText, sort_order: sortOrder });
+  },
+  async deleteService(id) {
+    return supabase.from("provider_services").delete().eq("id", id);
+  },
+  async fetchGalleryPhotos(providerId) {
+    const { data, error } = await supabase.from("provider_photos").select("*").eq("provider_id", providerId).order("sort_order");
+    return error ? [] : data;
+  },
+  async addGalleryPhoto(providerId, photoUrl, sortOrder) {
+    return supabase.from("provider_photos").insert({ provider_id: providerId, photo_url: photoUrl, sort_order: sortOrder });
+  },
+  async deleteGalleryPhoto(id) {
+    return supabase.from("provider_photos").delete().eq("id", id);
+  },
+};
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const initials = (name) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+function AvatarBlock({ name, size = 48, color }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: 12, background: color || T.navy, color: "#fff",
+      display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
+      fontSize: size * 0.36, letterSpacing: 0.5, flexShrink: 0 }}>
+      {initials(name)}
+    </div>
+  );
+}
+
+function PhotoOrAvatar({ photoUrl, name, size = 48, color }) {
+  if (photoUrl) {
+    return <img src={photoUrl} alt={name} style={{ width: size, height: size, borderRadius: 12, objectFit: "cover", flexShrink: 0 }} />;
+  }
+  return <AvatarBlock name={name} size={size} color={color} />;
+}
+
+function StatusBadges({ verifiedField, validated, compact }) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {verifiedField && (
+        <span className="inline-flex items-center gap-1 rounded-full font-semibold"
+          style={{ background: "#EAF7EF", color: T.greenDeep, padding: compact ? "2px 8px" : "4px 10px", fontSize: compact ? 11 : 12 }}>
+          🛡️ Vérifié terrain
+        </span>
+      )}
+      {validated ? (
+        <span className="inline-flex items-center gap-1 rounded-full font-semibold"
+          style={{ background: "#EAF0FB", color: T.blue, padding: compact ? "2px 8px" : "4px 10px", fontSize: compact ? 11 : 12 }}>
+          ✅ Validé
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full font-semibold"
+          style={{ background: "#FBF3E3", color: "#9A6B00", padding: compact ? "2px 8px" : "4px 10px", fontSize: compact ? 11 : 12 }}>
+          En attente
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Écran de configuration manquante                                    */
+/* ------------------------------------------------------------------ */
+function SetupNotice() {
+  return (
+    <div className="h-full flex items-center justify-center p-6 text-center" style={{ background: T.cream }}>
+      <div>
+        <div className="text-3xl mb-3">⚙️</div>
+        <h2 className="font-bold text-lg mb-2" style={{ color: T.ink }}>Configuration Supabase requise</h2>
+        <p className="text-sm" style={{ color: T.mute }}>
+          Renseigne <code>SUPABASE_URL</code> et <code>SUPABASE_ANON_KEY</code> en haut du fichier
+          (Paramètres du projet → API dans le tableau de bord Supabase), après avoir exécuté
+          <code> dabakala-services-schema.sql</code>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Connexion / inscription — nécessaire pour Agent et Admin (RLS)      */
+/* ------------------------------------------------------------------ */
+function AuthForm({ onDone }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setError(""); setBusy(true);
+    try {
+      if (mode === "login") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+        if (error) throw error;
+        setError("Compte créé. Un administrateur doit vous attribuer le rôle agent/admin avant l'accès.");
+      }
+      onDone && onDone();
+    } catch (e) {
+      setError(e.message || "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withGoogle = async () => {
+    setError("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.href },
+    });
+    if (error) setError(error.message);
+  };
+
+  return (
+    <div className="flex flex-col h-full items-center justify-center px-6" style={{ background: T.cream }}>
+      <div className="w-full rounded-2xl p-5" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+        <h2 className="font-bold text-base mb-3" style={{ color: T.ink }}>
+          {mode === "login" ? "Connexion" : "Créer un compte"}
+        </h2>
+        <button onClick={withGoogle} className="w-full mb-3 flex items-center justify-center gap-2 rounded-xl py-2.5 font-semibold"
+          style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }}>
+          <span style={{ fontSize: 16 }}>🔵</span> Continuer avec Google
+        </button>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex-1 h-px" style={{ background: T.line }} />
+          <span className="text-[10px] font-semibold" style={{ color: T.mute }}>OU</span>
+          <div className="flex-1 h-px" style={{ background: T.line }} />
+        </div>
+        {mode === "signup" && (
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nom complet"
+            className="w-full mb-2 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        )}
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email"
+          className="w-full mb-2 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" type="password"
+          className="w-full mb-3 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        {error && <div className="text-xs mb-2" style={{ color: T.orange }}>{error}</div>}
+        <button onClick={submit} disabled={busy} className="w-full rounded-xl py-2.5 font-semibold text-white" style={{ background: T.navy }}>
+          {busy ? "…" : mode === "login" ? "Se connecter" : "S'inscrire"}
+        </button>
+        <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }} className="w-full mt-2 text-xs font-semibold" style={{ color: T.blue }}>
+          {mode === "login" ? "Pas de compte ? S'inscrire" : "Déjà un compte ? Se connecter"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Enveloppe qui exige une session + un rôle minimal avant d'afficher l'écran */
+function AuthGate({ session, profile, allow, children }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  if (!session) return <AuthForm onDone={() => setRefreshKey((k) => k + 1)} key={refreshKey} />;
+  if (!profile) return <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement du profil…</div>;
+  if (!allow.includes(profile.role)) {
+    return (
+      <div className="h-full flex items-center justify-center p-6 text-center" style={{ background: T.cream }}>
+        <p className="text-sm" style={{ color: T.mute }}>
+          Ce compte (« {profile.role} ») n'a pas accès à cet espace. Un administrateur doit vous attribuer le bon rôle.
+        </p>
+      </div>
+    );
+  }
+  return children;
+}
+
+function RealMap({ providers, selectedId, onSelect, height = 220, showLocateButton = false }) {
+  const mapDivRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef({});
+  const userMarkerRef = useRef(null);
+  const [locating, setLocating] = useState(false);
+  const [locateErr, setLocateErr] = useState("");
+
+  useEffect(() => {
+    if (!mapDivRef.current || mapRef.current || !window.L) return;
+    const map = window.L.map(mapDivRef.current, { attributionControl: false }).setView(DABAKALA_CENTER, 13);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap",
+    }).addTo(map);
+    window.L.control.attribution({ prefix: false, position: "bottomright" }).addTo(map);
+    mapRef.current = map;
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    Object.values(markersRef.current).forEach((m) => map.removeLayer(m));
+    markersRef.current = {};
+    const pts = providers.filter((p) => p.lat && p.lng);
+    pts.forEach((p) => {
+      const active = p.id === selectedId;
+      const size = active ? 34 : 26;
+      const icon = window.L.divIcon({
+        html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${active ? T.orange : T.navy};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:${active ? 15 : 12}px;box-shadow:0 1px 4px rgba(0,0,0,0.35);">📍</div>`,
+        className: "",
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size],
+      });
+      const marker = window.L.marker([p.lat, p.lng], { icon }).addTo(map);
+      marker.bindTooltip(p.name, { direction: "top", offset: [0, -size] });
+      marker.on("click", () => onSelect(p.id));
+      markersRef.current[p.id] = marker;
+    });
+    if (pts.length > 0) {
+      const bounds = window.L.latLngBounds(pts.map((p) => [p.lat, p.lng]));
+      map.fitBounds(bounds, { padding: [28, 28], maxZoom: 16 });
+    } else {
+      map.setView(DABAKALA_CENTER, 13);
+    }
+  }, [providers, selectedId]);
+
+  const locateMe = () => {
+    if (!navigator.geolocation) { setLocateErr("Géolocalisation non supportée sur cet appareil."); return; }
+    setLocating(true); setLocateErr("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const { latitude, longitude } = pos.coords;
+        const map = mapRef.current;
+        if (!map) return;
+        if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
+        const icon = window.L.divIcon({
+          html: `<div style="width:16px;height:16px;border-radius:9999px;background:${T.blue};border:3px solid #fff;box-shadow:0 0 0 4px rgba(27,77,143,0.25);"></div>`,
+          className: "", iconSize: [16, 16], iconAnchor: [8, 8],
+        });
+        userMarkerRef.current = window.L.marker([latitude, longitude], { icon }).addTo(map);
+        map.setView([latitude, longitude], 15);
+      },
+      (err) => { setLocating(false); setLocateErr("Position indisponible — autorise l'accès à la localisation."); },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  return (
+    <div className="relative w-full overflow-hidden rounded-2xl" style={{ height, border: `1px solid ${T.line}` }}>
+      <div ref={mapDivRef} style={{ width: "100%", height: "100%" }} />
+      {showLocateButton && (
+        <button onClick={locateMe} disabled={locating}
+          className="absolute top-2 right-2 rounded-full px-2.5 py-1.5 text-xs font-semibold shadow"
+          style={{ background: "#fff", color: T.navy, zIndex: 1000 }}>
+          {locating ? "…" : "📍 Ma position"}
+        </button>
+      )}
+      {locateErr && (
+        <div className="absolute bottom-2 left-2 right-2 px-2 py-1 rounded-md text-[10px] font-medium" style={{ background: "rgba(255,255,255,0.95)", color: T.orange, zIndex: 1000 }}>
+          {locateErr}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StarRow({ rating, size = 12 }) {
+  return (
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" size={size} color={T.gold} filled={n <= rating} />)}
+    </div>
+  );
+}
+
+function ReviewsSection({ provider, session }) {
+  const [reviews, setReviews] = useState([]);
+  const [myRating, setMyRating] = useState(0);
+  const [myComment, setMyComment] = useState("");
+  const [myReview, setMyReview] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+  const load = async () => {
+    const rows = await api.fetchReviews(provider.id);
+    setReviews(rows);
+    if (session) {
+      const mine = rows.find((r) => r.user_id === session.user.id);
+      setMyReview(mine || null);
+      if (mine) { setMyRating(mine.rating); setMyComment(mine.comment || ""); }
+    }
+  };
+
+  useEffect(() => { load(); }, [provider.id]);
+
+  const editableUntil = myReview ? new Date(myReview.created_at).getTime() + EDIT_WINDOW_MS : null;
+  const canEdit = !myReview || Date.now() < editableUntil;
+
+  const submit = async () => {
+    if (!session) { setShowAuth(true); return; }
+    if (!myRating || !canEdit) return;
+    setBusy(true);
+    await api.upsertReview(provider.id, session.user.id, myRating, myComment);
+    setBusy(false);
+    load();
+  };
+
+  return (
+    <div>
+      <div className="text-xs mb-2" style={{ color: T.mute }}>{reviews.length} avis</div>
+      <div className="space-y-2 mb-3">
+        {reviews.length === 0 && <div className="text-xs" style={{ color: T.mute }}>Aucun avis pour l'instant.</div>}
+        {reviews.map((r) => (
+          <div key={r.id} className="rounded-2xl p-3" style={{ background: "#fff", boxShadow: T.shadow }}>
+            <div className="flex items-center gap-2">
+              <div className="rounded-full flex items-center justify-center font-bold text-white" style={{ width: 30, height: 30, background: T.blue, fontSize: 12, flexShrink: 0 }}>
+                {(r.profiles?.full_name || "U")[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold truncate" style={{ color: T.ink }}>{r.profiles?.full_name || "Utilisateur"}</div>
+                <div className="mt-0.5"><StarRow rating={r.rating} size={10} /></div>
+              </div>
+              <div className="text-[10px]" style={{ color: T.mute, flexShrink: 0 }}>{timeAgo(r.created_at)}</div>
+            </div>
+            {r.comment && <p className="text-xs mt-2" style={{ color: T.ink }}>{r.comment}</p>}
+          </div>
+        ))}
+      </div>
+
+      {showAuth ? (
+        <AuthForm onDone={() => { setShowAuth(false); load(); }} />
+      ) : myReview && !canEdit ? (
+        <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+          <div className="text-xs font-semibold mb-1.5" style={{ color: T.ink }}>Votre avis</div>
+          <StarRow rating={myReview.rating} size={16} />
+          {myReview.comment && <p className="text-xs mt-1" style={{ color: T.mute }}>{myReview.comment}</p>}
+          <p className="text-[10px] mt-2" style={{ color: T.mute }}>La modification n'est possible que dans les 24h suivant la publication.</p>
+        </div>
+      ) : (
+        <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+          <div className="text-xs font-semibold mb-1.5" style={{ color: T.ink }}>{myReview ? "Modifier votre avis" : "Laisser un avis"}</div>
+          {myReview && (
+            <p className="text-[10px] mb-2" style={{ color: T.mute }}>Modifiable jusqu'à {new Date(editableUntil).toLocaleString("fr-FR")}</p>
+          )}
+          <div className="flex gap-1 mb-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} onClick={() => setMyRating(n)} style={{ opacity: n <= myRating ? 1 : 0.35 }}><Icon name="star" size={22} color={T.gold} filled /></button>
+            ))}
+          </div>
+          <textarea value={myComment} onChange={(e) => setMyComment(e.target.value)} rows={2} placeholder="Votre commentaire (optionnel)"
+            className="w-full rounded-lg px-2.5 py-2 text-xs outline-none resize-none mb-2" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+          <button onClick={submit} disabled={busy || !myRating} className="w-full rounded-lg py-2 text-xs font-semibold text-white" style={{ background: T.navy, opacity: !myRating ? 0.5 : 1 }}>
+            {session ? "Publier" : "Se connecter pour publier"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BannerCarousel() {
+  const slides = [
+    { photo: "./banner-hero.jpg", isPhoto: true },
+    { bg: `linear-gradient(120deg, #C9680F 0%, ${T.orange} 100%)`, title: "12 catégories", titleAccent: "de prestataires", text: "Réparation, beauté, transport, informatique et bien plus.", icon: "wrench" },
+    { bg: `linear-gradient(120deg, #0A3576 0%, ${T.blue} 100%)`, title: "Trouvez,", titleAccent: "contactez, faites confiance", text: "Des prestataires vérifiés sur le terrain, près de chez vous.", icon: "shieldCheck" },
+  ];
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((v) => (v + 1) % slides.length), 4500);
+    return () => clearInterval(t);
+  }, []);
+  const s = slides[i];
+  return (
+    <div className="relative rounded-2xl overflow-hidden" style={{ height: 118, background: s.isPhoto ? "#EAF0FB" : s.bg }}>
+      {s.isPhoto ? (
+        <>
+          <img src={s.photo} alt="Dabakala" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(247,249,252,0.97) 0%, rgba(247,249,252,0.75) 35%, rgba(247,249,252,0.05) 65%)" }} />
+          <div className="absolute inset-0 flex items-center px-4">
+            <div className="flex-1 min-w-0">
+              <div className="font-extrabold text-lg leading-tight">
+                <span style={{ color: T.navy }}>Dabakala</span> <span style={{ color: T.orange }}>Services</span>
+              </div>
+              <div className="text-xs mt-1 leading-snug font-semibold" style={{ color: T.ink, maxWidth: 190 }}>Le service qu'il vous faut, près de chez vous.</div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="absolute inset-0 flex items-center px-4">
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-extrabold text-base leading-tight">{s.title}<br /><span style={{ opacity: 0.92 }}>{s.titleAccent}</span></div>
+            <div className="text-[11px] mt-1 leading-snug" style={{ color: "rgba(255,255,255,0.85)", maxWidth: 200 }}>{s.text}</div>
+          </div>
+          <div style={{ opacity: 0.9 }}><Icon name={s.icon} size={42} color="#fff" strokeWidth={1.6} /></div>
+        </div>
+      )}
+      <div className="absolute bottom-2.5 left-0 right-0 flex justify-center gap-1.5">
+        {slides.map((_, idx) => (
+          <button key={idx} onClick={() => setI(idx)} style={{ width: idx === i ? 14 : 6, height: 6, borderRadius: 999, background: idx === i ? (s.isPhoto ? T.navy : "#fff") : "rgba(120,120,120,0.35)", transition: "width 0.2s" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CategoryTile({ cat, active, onClick, size = "normal" }) {
+  const big = size === "big";
+  return (
+    <button onClick={onClick} className="flex flex-col items-center gap-1.5" style={{ flexShrink: 0, width: big ? 74 : "auto" }}>
+      <div className="flex items-center justify-center rounded-2xl" style={{
+        width: big ? 58 : "100%", height: big ? 58 : 58,
+        background: cat.color,
+        boxShadow: active ? `0 4px 14px ${cat.color}80` : `0 3px 8px ${cat.color}45`,
+        outline: active ? `2.5px solid ${T.ink}` : "none",
+        outlineOffset: active ? 2 : 0,
+        transform: active ? "scale(1.06)" : "scale(1)",
+        transition: "transform 0.15s",
+      }}>
+        <Icon name={cat.icon || iconForCategory(cat.id)} size={24} color="#fff" strokeWidth={2.2} />
+      </div>
+      <span className="text-[10.5px] font-bold text-center leading-tight" style={{ color: T.ink }}>{cat.label}</span>
+    </button>
+  );
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function formatDistance(km) {
+  return km.toFixed(1).replace(".", ",") + " km";
+}
+
+function ProviderCard({ p, categories, onOpen, userLoc }) {
+  const c2 = categories.find((c) => c.id === p.category_id) || {};
+  const distance = userLoc && p.lat && p.lng ? haversineKm(userLoc.lat, userLoc.lng, p.lat, p.lng) : null;
+  return (
+    <button onClick={() => onOpen(p)} className="w-full rounded-2xl p-3 text-left" style={{ background: "#fff", boxShadow: T.shadow }}>
+      <div className="flex gap-3">
+        <div className="relative" style={{ flexShrink: 0 }}>
+          <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={72} color={c2.color} />
+          {p.verified_field && (
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-full font-bold whitespace-nowrap" style={{ background: T.green, color: "#fff", fontSize: 8.5, padding: "1.5px 7px 1.5px 5px" }}>
+              <Icon name="checkCircle" size={9} color="#fff" filled /> Vérifié
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0 pt-0.5">
+          <div className="font-bold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
+          <div className="text-[11px] truncate" style={{ color: T.mute }}>{c2.label}</div>
+          <div className="flex items-center gap-1 text-xs mt-1" style={{ color: T.ink }}>
+            <Icon name="star" size={13} color={T.gold} filled /><span className="font-semibold">{p.rating}</span>
+            <span style={{ color: T.mute }}>({p.reviews_count} avis)</span>
+          </div>
+          <div className="flex items-center justify-between mt-0.5">
+            <div className="flex items-center gap-1 text-[11px] truncate" style={{ color: T.mute }}>
+              <Icon name="mapPin" size={12} color={T.mute} /> {p.zone}, Dabakala
+            </div>
+            {distance !== null && (
+              <span className="text-[11px] font-bold" style={{ color: T.blue, flexShrink: 0 }}>{formatDistance(distance)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <a href={`tel:${p.phone}`} onClick={(e) => e.stopPropagation()} className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold" style={{ border: `1.5px solid ${T.blue}`, color: T.blue }}>
+          <Icon name="phone" size={14} color={T.blue} /> Appeler
+        </a>
+        <a href={`https://wa.me/225${p.whatsapp || p.phone}`} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold text-white" style={{ background: T.green }}>
+          <Icon name="chat" size={14} color="#fff" filled /> WhatsApp
+        </a>
+      </div>
+    </button>
+  );
+}
+
+function FavoritesView({ session, categories, onOpen }) {
+  const [favs, setFavs] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+
+  const load = async () => {
+    if (!session) return;
+    setFavs(await api.fetchFavoriteProviders(session.user.id));
+  };
+
+  useEffect(() => { load(); }, [session]);
+
+  if (!session) {
+    return (
+      <div className="px-4 py-4">
+        {showAuth ? (
+          <AuthForm onDone={() => setShowAuth(false)} />
+        ) : (
+          <div className="rounded-xl p-4 text-center" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+            <div className="text-2xl mb-2">🤍</div>
+            <p className="text-sm mb-3" style={{ color: T.mute }}>Connecte-toi pour retrouver tes prestataires favoris.</p>
+            <button onClick={() => setShowAuth(true)} className="rounded-xl px-4 py-2 text-xs font-semibold text-white" style={{ background: T.navy }}>Se connecter</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-4">
+      <div className="text-sm font-bold mb-2" style={{ color: T.ink }}>Mes favoris {favs ? `(${favs.length})` : ""}</div>
+      {favs === null && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Chargement…</div>}
+      {favs && favs.length === 0 && (
+        <div className="text-sm text-center py-8" style={{ color: T.mute }}>
+          Aucun favori pour l'instant — appuie sur 🤍 sur une fiche prestataire pour l'ajouter ici.
+        </div>
+      )}
+      <div className="space-y-2">
+        {favs && favs.map((p) => <ProviderCard key={p.id} p={p} categories={categories} onOpen={onOpen} />)}
+      </div>
+    </div>
+  );
+}
+
+function ServicesTab({ provider }) {
+  const [services, setServices] = useState(null);
+  useEffect(() => { api.fetchServices(provider.id).then(setServices); }, [provider.id]);
+
+  if (services === null) return <div className="text-xs" style={{ color: T.mute }}>Chargement…</div>;
+  if (services.length === 0) return <div className="text-xs" style={{ color: T.mute }}>Aucun service détaillé pour l'instant — voir le tarif indicatif ci-dessus.</div>;
+
+  return (
+    <div className="flex gap-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+      {services.map((s) => (
+        <div key={s.id} className="flex flex-col items-center justify-center rounded-2xl text-center" style={{ background: "#fff", boxShadow: T.shadow, minWidth: 84, padding: "12px 8px", flexShrink: 0 }}>
+          <Icon name={iconForCategory(provider.category_id)} size={22} color={T.orange} strokeWidth={1.8} />
+          <span className="text-[11px] font-semibold mt-1 leading-tight" style={{ color: T.ink }}>{s.name}</span>
+          {s.price_text && <span className="text-[10px] mt-0.5" style={{ color: T.orange, fontWeight: 700 }}>{s.price_text}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PhotosTab({ provider }) {
+  const [photos, setPhotos] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  useEffect(() => { api.fetchGalleryPhotos(provider.id).then(setPhotos); }, [provider.id]);
+
+  const all = [
+    ...(provider.photo_url ? [{ id: "main", photo_url: provider.photo_url }] : []),
+    ...(photos || []),
+  ];
+
+  if (photos === null) return <div className="text-xs" style={{ color: T.mute }}>Chargement…</div>;
+  if (all.length === 0) return <div className="text-xs" style={{ color: T.mute }}>Aucune photo pour l'instant.</div>;
+
+  return (
+    <div>
+      <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {all.map((p) => (
+          <button key={p.id} onClick={() => setLightbox(p.photo_url)} className="rounded-2xl overflow-hidden" style={{ width: 110, height: 110, flexShrink: 0, boxShadow: T.shadow }}>
+            <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </button>
+        ))}
+      </div>
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} className="fixed inset-0 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.85)", zIndex: 2000 }}>
+          <img src={lightbox} alt="" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderSheet({ provider, categories, session, onBack }) {
+  const cat = categories.find((c) => c.id === provider.category_id) || {};
+  const [fav, setFav] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [shareMsg, setShareMsg] = useState("");
+
+  useEffect(() => {
+    if (session) api.isFavorite(provider.id, session.user.id).then(setFav);
+  }, [provider.id, session]);
+
+  const toggleFav = async () => {
+    if (!session) { setShowAuth(true); return; }
+    await api.setFavorite(provider.id, session.user.id, !fav);
+    setFav(!fav);
+  };
+
+  const shareProvider = async () => {
+    const url = `${window.location.origin}${window.location.pathname}?prestataire=${provider.id}`;
+    const text = `${provider.name} — ${cat.label || ""} à Dabakala. ${provider.phone}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: provider.name, text, url }); } catch (e) { /* annulé par l'utilisateur */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMsg("Lien copié !");
+    } catch (e) {
+      setShareMsg(url);
+    }
+    setTimeout(() => setShareMsg(""), 2500);
+  };
+
+  const RoundBtn = ({ children, onClick, filled }) => {
+    const style = { width: 38, height: 38, borderRadius: 999, background: filled ? "#fff" : "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.2)" };
+    return <button onClick={onClick} style={style}>{children}</button>;
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: T.bg }}>
+      <div className="flex-1 overflow-y-auto">
+        {/* Hero */}
+        <div className="relative" style={{ height: 190 }}>
+          {provider.photo_url ? (
+            <img src={provider.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${cat.color || T.navy} 0%, ${T.navy} 100%)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name={cat.icon || iconForCategory(provider.category_id)} size={56} color="rgba(255,255,255,0.9)" strokeWidth={1.4} />
+            </div>
+          )}
+          <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4">
+            <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: 999, background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
+              <Icon name="chevronLeft" size={20} color={T.ink} />
+            </button>
+            <div className="flex gap-2">
+              <RoundBtn onClick={shareProvider}><Icon name="share" size={16} color={T.ink} /></RoundBtn>
+              <RoundBtn onClick={toggleFav}><Icon name="heart" size={17} color={fav ? "#E23744" : T.ink} filled={fav} /></RoundBtn>
+            </div>
+          </div>
+          {shareMsg && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[11px] font-semibold" style={{ background: T.gold, color: T.navyDeep }}>
+              {shareMsg}
+            </div>
+          )}
+        </div>
+
+        {/* Carte imbriquée */}
+        <div className="relative -mt-5 rounded-t-3xl px-4 pt-4 pb-2" style={{ background: T.bg }}>
+          <div className="flex gap-3 items-start">
+            <div className="rounded-2xl flex items-center justify-center" style={{ width: 56, height: 56, background: "#fff", boxShadow: T.shadow, flexShrink: 0, marginTop: -28 }}>
+              <Icon name={cat.icon || iconForCategory(provider.category_id)} size={26} color={cat.color || T.navy} />
+            </div>
+            <div className="flex-1 min-w-0 pt-1">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-lg font-bold truncate" style={{ color: T.ink }}>{provider.name}</h2>
+                {provider.validated && <Icon name="checkCircle" size={16} color={T.blue} filled />}
+              </div>
+              <div className="text-xs" style={{ color: T.mute }}>{cat.label}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 mt-2">
+            <Icon name="star" size={14} color={T.gold} filled />
+            <span className="text-sm font-bold" style={{ color: T.ink }}>{provider.rating}</span>
+            <span className="text-xs" style={{ color: T.mute }}>({provider.reviews_count} avis)</span>
+            {provider.verified_field && (
+              <span className="ml-1 flex items-center gap-1 rounded-full font-semibold" style={{ background: "#EAF7EF", color: T.greenDeep, fontSize: 10.5, padding: "2px 8px" }}>
+                <Icon name="shieldCheck" size={11} color={T.greenDeep} /> Vérifié terrain
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <div className="rounded-xl p-2 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+              <div className="flex justify-center"><Icon name="mapPin" size={17} color={T.blue} /></div>
+              <div className="text-[10px] font-semibold mt-0.5 truncate" style={{ color: T.ink }}>{provider.zone}</div>
+              <div className="text-[9px]" style={{ color: T.mute }}>Zone</div>
+            </div>
+            <div className="rounded-xl p-2 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+              <div className="flex justify-center"><Icon name="wallet" size={17} color={T.orange} /></div>
+              <div className="text-[10px] font-semibold mt-0.5 truncate" style={{ color: T.ink }}>{provider.price_text || "—"}</div>
+              <div className="text-[9px]" style={{ color: T.mute }}>Tarif indicatif</div>
+            </div>
+            <div className="rounded-xl p-2 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+              <div className="flex justify-center"><Icon name={provider.validated ? "checkCircle" : "clock"} size={17} color={provider.validated ? T.greenDeep : T.gold} /></div>
+              <div className="text-[10px] font-semibold mt-0.5" style={{ color: T.ink }}>{provider.validated ? "Validé" : "En attente"}</div>
+              <div className="text-[9px]" style={{ color: T.mute }}>Statut</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-4 pb-4 space-y-5">
+          <div>
+            <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>À propos</div>
+            <p className="text-sm leading-relaxed" style={{ color: T.ink }}>{provider.description || "Aucune description pour l'instant."}</p>
+          </div>
+
+          {provider.lat && provider.lng && (
+            <div>
+              <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>Localisation</div>
+              <RealMap providers={[provider]} selectedId={provider.id} onSelect={() => {}} height={150} />
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${provider.lat},${provider.lng}`} target="_blank" rel="noreferrer"
+                className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2 text-xs font-bold" style={{ background: "#fff", border: `1.5px solid ${T.blue}`, color: T.blue }}>
+                <Icon name="mapPin" size={14} color={T.blue} /> Itinéraire
+              </a>
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-bold" style={{ color: T.ink }}>Services proposés</span>
+            </div>
+            <ServicesTab provider={provider} />
+          </div>
+
+          <div>
+            <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>Réalisations</div>
+            <PhotosTab provider={provider} />
+          </div>
+
+          <div>
+            <div className="text-sm font-bold mb-1.5" style={{ color: T.ink }}>Avis clients</div>
+            {showAuth ? <AuthForm onDone={() => setShowAuth(false)} /> : <ReviewsSection provider={provider} session={session} />}
+          </div>
+        </div>
+      </div>
+      <div className="px-4 py-3 grid grid-cols-2 gap-2" style={{ background: "#fff", borderTop: `1px solid ${T.line}` }}>
+        <a href={`tel:${provider.phone}`} className="flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold" style={{ border: `1.5px solid ${T.blue}`, color: T.blue }}><Icon name="phone" size={15} color={T.blue} /> Appeler</a>
+        <a href={`https://wa.me/225${provider.whatsapp || provider.phone}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-white" style={{ background: T.green }}><Icon name="chat" size={15} color="#fff" filled /> WhatsApp</a>
+      </div>
+    </div>
+  );
+}
+
+function ProfileTab({ session }) {
+  const [showAuth, setShowAuth] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [favCount, setFavCount] = useState(null);
+
+  useEffect(() => {
+    if (!session) return;
+    api.getProfile(session.user.id).then(setProfile);
+    api.fetchFavoriteProviders(session.user.id).then((f) => setFavCount(f.length));
+  }, [session]);
+
+  if (!session) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center px-6" style={{ background: T.bg }}>
+        {showAuth ? (
+          <div className="w-full"><AuthForm onDone={() => setShowAuth(false)} /></div>
+        ) : (
+          <div className="w-full rounded-2xl p-6 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+            <div className="mx-auto rounded-full flex items-center justify-center mb-3" style={{ width: 56, height: 56, background: T.bg }}>
+              <Icon name="user" size={26} color={T.navy} />
+            </div>
+            <p className="text-sm mb-4" style={{ color: T.mute }}>Connecte-toi pour gérer ton profil, tes avis et tes favoris.</p>
+            <button onClick={() => setShowAuth(true)} className="rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: T.navy }}>Se connecter</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const name = profile?.full_name || session.user.email;
+
+  return (
+    <div className="h-full overflow-y-auto px-4 py-5" style={{ background: T.bg }}>
+      <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: "#fff", boxShadow: T.shadow }}>
+        <div className="rounded-full flex items-center justify-center font-bold text-white" style={{ width: 52, height: 52, background: T.navy, fontSize: 18 }}>
+          {(name || "U")[0].toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm truncate" style={{ color: T.ink }}>{name}</div>
+          <div className="text-xs truncate" style={{ color: T.mute }}>{session.user.email}</div>
+          {profile && (
+            <span className="inline-block mt-1 rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: T.bg, color: T.navy }}>{profile.role}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="rounded-2xl p-3 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+          <div className="flex justify-center mb-1"><Icon name="heart" size={18} color={T.orange} filled /></div>
+          <div className="font-bold text-sm" style={{ color: T.ink }}>{favCount === null ? "…" : favCount}</div>
+          <div className="text-[10px]" style={{ color: T.mute }}>Favoris</div>
+        </div>
+        <div className="rounded-2xl p-3 text-center" style={{ background: "#fff", boxShadow: T.shadow }}>
+          <div className="flex justify-center mb-1"><Icon name="shieldCheck" size={18} color={T.greenDeep} /></div>
+          <div className="font-bold text-sm" style={{ color: T.ink }}>{profile ? profile.role : "…"}</div>
+          <div className="text-[10px]" style={{ color: T.mute }}>Rôle du compte</div>
+        </div>
+      </div>
+
+      <button onClick={() => supabase.auth.signOut()} className="w-full mt-5 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold" style={{ border: `1.5px solid #B3261E`, color: "#B3261E" }}>
+        <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
+      </button>
+    </div>
+  );
+}
+
+function UserHome({ providers, categories, session, onOpen, userTab, onNavigate }) {
+  const [query, setQuery] = useState("");
+  const [cat, setCat] = useState(null);
+  const [mode, setMode] = useState("list");
+  const [selected, setSelected] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [zone, setZone] = useState("");
+  const [minRating, setMinRating] = useState(0);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("pertinence");
+  const [userLoc, setUserLoc] = useState(null);
+  const [showAllCats, setShowAllCats] = useState(false);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: false, timeout: 6000 }
+    );
+  }, []);
+
+  const activeFilterCount = (zone ? 1 : 0) + (minRating > 0 ? 1 : 0) + (verifiedOnly ? 1 : 0) + (cat ? 1 : 0);
+  const availableZones = useMemo(
+    () => [...new Set(providers.filter((p) => p.validated && p.zone).map((p) => p.zone))].sort(),
+    [providers]
+  );
+
+  const resetFilters = () => { setZone(""); setMinRating(0); setVerifiedOnly(false); setSortBy("pertinence"); };
+
+  const visible = useMemo(() => {
+    const q = query.toLowerCase();
+    let rows = providers
+      .filter((p) => p.validated)
+      .filter((p) => (cat ? p.category_id === cat : true))
+      .filter((p) => (zone ? p.zone === zone : true))
+      .filter((p) => (minRating ? p.rating >= minRating : true))
+      .filter((p) => (verifiedOnly ? p.verified_field : true))
+      .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q));
+
+    if (sortBy === "rating") rows = [...rows].sort((a, b) => b.rating - a.rating);
+    else if (sortBy === "reviews") rows = [...rows].sort((a, b) => b.reviews_count - a.reviews_count);
+    else if (sortBy === "az") rows = [...rows].sort((a, b) => a.name.localeCompare(b.name));
+
+    return rows;
+  }, [providers, cat, query, zone, minRating, verifiedOnly, sortBy]);
+
+  const popular = useMemo(() => {
+    return providers.filter((p) => p.validated).slice().sort((a, b) => b.rating - a.rating || b.reviews_count - a.reviews_count).slice(0, 6);
+  }, [providers]);
+
+  const goSearch = () => { setQuery(""); };
+
+  if (userTab === "favorites") {
+    return (
+      <div className="h-full overflow-y-auto" style={{ background: T.bg }}>
+        <FavoritesView session={session} categories={categories} onOpen={onOpen} />
+      </div>
+    );
+  }
+
+  if (userTab === "profile") {
+    return <ProfileTab session={session} />;
+  }
+
+  if (userTab === "home") {
+    const nearby = providers.filter((p) => p.validated).slice(0, 5);
+    return (
+      <div className="h-full overflow-y-auto" style={{ background: T.bg }}>
+        <div className="px-4 pt-4 pb-1">
+          <div className="text-sm" style={{ color: T.mute }}>Bonjour 👋</div>
+          <div className="font-extrabold text-lg" style={{ color: T.ink }}>Que recherchez-vous ?</div>
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: "#fff", border: `1px solid ${T.line}` }}
+            onClick={() => onNavigate && onNavigate("search")}>
+            <Icon name="search" size={16} color={T.mute} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} onFocus={() => onNavigate && onNavigate("search")} placeholder="Rechercher un service, un prestataire…" className="flex-1 text-sm outline-none bg-transparent" style={{ color: T.ink }} />
+          </div>
+        </div>
+        <div className="px-4 py-4 space-y-5">
+          <BannerCarousel />
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold" style={{ color: T.ink }}>Catégories</span>
+              <button onClick={() => setShowAllCats((v) => !v)} className="text-xs font-semibold" style={{ color: T.blue }}>
+                {showAllCats ? "Réduire" : "Voir tout"}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {(showAllCats ? categories : categories.slice(0, 6)).map((c) => (
+                <CategoryTile key={c.id} cat={c} active={cat === c.id} onClick={() => { setCat(cat === c.id ? null : c.id); onNavigate && onNavigate("search"); }} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold" style={{ color: T.ink }}>Prestataires populaires</span>
+              <button onClick={() => onNavigate && onNavigate("search")} className="text-xs font-semibold" style={{ color: T.blue }}>Voir tout</button>
+            </div>
+            {popular.length === 0 ? (
+              <div className="text-sm" style={{ color: T.mute }}>Aucun prestataire validé pour l'instant.</div>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+                {popular.map((p) => {
+                  const c2 = categories.find((c) => c.id === p.category_id) || {};
+                  return (
+                    <button key={p.id} onClick={() => onOpen(p)} className="rounded-2xl p-3 text-left" style={{ background: "#fff", boxShadow: T.shadow, width: 150, flexShrink: 0 }}>
+                      <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={44} color={c2.color} />
+                      <div className="font-bold text-xs mt-2 truncate" style={{ color: T.ink }}>{p.name}</div>
+                      <div className="text-[10px] truncate" style={{ color: T.mute }}>{c2.label}</div>
+                      <div className="flex items-center gap-1 text-[11px] mt-1"><Icon name="star" size={11} color={T.gold} filled /><span className="font-semibold" style={{ color: T.ink }}>{p.rating}</span></div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold" style={{ color: T.ink }}>Services près de vous</span>
+              <button onClick={() => onNavigate && onNavigate("search")} className="text-xs font-semibold" style={{ color: T.blue }}>Voir tout</button>
+            </div>
+            {nearby.length === 0 ? (
+              <div className="text-sm" style={{ color: T.mute }}>Aucun prestataire validé pour l'instant.</div>
+            ) : (
+              <div className="space-y-3">
+                {nearby.map((p) => <ProviderCard key={p.id} p={p} categories={categories} onOpen={onOpen} userLoc={userLoc} />)}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* userTab === "search" */
+  return (
+    <div className="flex flex-col h-full" style={{ background: T.bg }}>
+      <div className="px-4 pt-4 pb-3" style={{ background: "#fff", borderBottom: `1px solid ${T.line}` }}>
+        <div className="font-extrabold text-base mb-2" style={{ color: T.ink }}>Recherche</div>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: T.bg, border: `1px solid ${T.line}` }}>
+            <Icon name="search" size={16} color={T.mute} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher un service, un prestataire…" className="flex-1 text-sm outline-none bg-transparent" style={{ color: T.ink }} />
+          </div>
+          <button onClick={() => setShowFilters((v) => !v)} className="rounded-xl flex items-center justify-center relative" style={{ width: 42, height: 42, background: T.blue, flexShrink: 0 }}>
+            <Icon name="sliders" size={17} color="#fff" />
+            {activeFilterCount > 0 && (
+              <span className="absolute rounded-full font-bold" style={{ top: -3, right: -3, background: T.orange, color: "#fff", fontSize: 9, padding: "1px 4px" }}>{activeFilterCount}</span>
+            )}
+          </button>
+        </div>
+        <div className="mt-2 text-xs" style={{ color: T.mute }}>
+          {query ? (
+            <><span className="font-bold" style={{ color: T.navy }}>{visible.length}</span> résultat{visible.length !== 1 ? "s" : ""} trouvé{visible.length !== 1 ? "s" : ""} pour « {query} »</>
+          ) : (
+            <><span className="font-bold" style={{ color: T.navy }}>{visible.length}</span> prestataire{visible.length !== 1 ? "s" : ""} disponible{visible.length !== 1 ? "s" : ""}</>
+          )}
+        </div>
+        <div className="mt-2.5 flex gap-2">
+          {[["list", "Liste"], ["map", "Carte"]].map(([id, label]) => (
+            <button key={id} onClick={() => setMode(id)} className="flex-1 rounded-lg py-1.5 text-xs font-semibold"
+              style={{ background: mode === id ? T.navy : T.bg, color: mode === id ? "#fff" : T.mute, border: `1px solid ${mode === id ? T.navy : T.line}` }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {showFilters && (
+          <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: T.bg, border: `1px solid ${T.line}` }}>
+            <div>
+              <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Zone</label>
+              <select value={zone} onChange={(e) => setZone(e.target.value)} className="w-full mt-0.5 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                <option value="">Toutes les zones</option>
+                {availableZones.map((z) => <option key={z} value={z}>{z}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Catégorie</label>
+              <select value={cat || ""} onChange={(e) => setCat(e.target.value || null)} className="w-full mt-0.5 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                <option value="">Toutes les catégories</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Note minimum</label>
+              <div className="flex gap-1 mt-0.5">
+                {[0, 3, 4, 4.5].map((n) => (
+                  <button key={n} onClick={() => setMinRating(n)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold"
+                    style={{ background: minRating === n ? T.gold : "#fff", border: `1px solid ${T.line}`, color: T.ink }}>
+                    {n === 0 ? "Toutes" : `${n}+ ⭐`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Trier par</label>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full mt-0.5 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                <option value="pertinence">Pertinence</option>
+                <option value="rating">Meilleure note</option>
+                <option value="reviews">Plus d'avis</option>
+                <option value="az">Ordre alphabétique</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold" style={{ color: T.ink }}>
+              <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} />
+              <Icon name="shieldCheck" size={13} color={T.greenDeep} /> Vérifiés terrain uniquement
+            </label>
+            {(activeFilterCount > 0 || cat) && (
+              <button onClick={() => { resetFilters(); setCat(null); }} className="w-full text-[11px] font-semibold underline" style={{ color: T.orange }}>Réinitialiser les filtres</button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {[
+            ["all", "Tous", null, () => { setVerifiedOnly(false); setSortBy("pertinence"); setCat(null); }, !verifiedOnly && sortBy === "pertinence" && !cat],
+            ["verified", "Vérifiés", "shieldCheck", () => setVerifiedOnly((v) => !v), verifiedOnly],
+            ["top", "Mieux notés", "star", () => setSortBy(sortBy === "rating" ? "pertinence" : "rating"), sortBy === "rating"],
+            ["reviews", "Plus d'avis", "chat", () => setSortBy(sortBy === "reviews" ? "pertinence" : "reviews"), sortBy === "reviews"],
+          ].map(([id, label, icon, fn, active]) => (
+            <button key={id} onClick={fn} className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap"
+              style={{ background: active ? T.navy : "#fff", color: active ? "#fff" : T.ink, border: `1px solid ${active ? T.navy : T.line}` }}>
+              {icon && <Icon name={icon} size={12} color={active ? "#fff" : T.ink} filled={active} />} {label}
+            </button>
+          ))}
+        </div>
+        {mode === "map" ? (
+          <div>
+            <RealMap providers={visible} selectedId={selected} onSelect={setSelected} height={260} showLocateButton />
+            {selected && (() => {
+              const p = visible.find((v) => v.id === selected);
+              if (!p) return null;
+              const c2 = categories.find((c) => c.id === p.category_id) || {};
+              return (
+                <button onClick={() => onOpen(p)} className="mt-3 w-full flex items-center gap-3 rounded-xl p-3 text-left" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                  <AvatarBlock name={p.name} size={44} color={c2.color} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm" style={{ color: T.ink }}>{p.name}</div>
+                    <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
+                  </div>
+                </button>
+              );
+            })()}
+          </div>
+        ) : (
+          <div>
+            <div className="space-y-3">
+              {visible.length === 0 && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucun prestataire validé pour ce filtre.</div>}
+              {visible.map((p) => <ProviderCard key={p.id} p={p} categories={categories} onOpen={onOpen} userLoc={userLoc} />)}
+            </div>
+            {visible.length > 0 && (
+              <div className="flex items-start gap-3 rounded-2xl p-3.5 mt-4" style={{ background: "#EAF0FB" }}>
+                <Icon name="chat" size={18} color={T.blue} filled />
+                <div>
+                  <div className="text-xs font-bold" style={{ color: T.navy }}>Conseil</div>
+                  <div className="text-xs mt-0.5" style={{ color: T.ink }}>Vous recherchez un service spécifique ? Utilisez les filtres pour affiner vos résultats.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProviderExtrasManager({ provider, onClose }) {
+  const [tab, setTab] = useState("services");
+  const [services, setServices] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [newName, setNewName] = useState("");
+  const [newPrice, setNewPrice] = useState("");
+  const [photoFile, setPhotoFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    setServices(await api.fetchServices(provider.id));
+    setPhotos(await api.fetchGalleryPhotos(provider.id));
+  };
+  useEffect(() => { load(); }, [provider.id]);
+
+  const addService = async () => {
+    if (!newName.trim()) return;
+    setBusy(true);
+    const { error } = await api.addService(provider.id, newName.trim(), newPrice.trim(), services.length);
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    setNewName(""); setNewPrice(""); load();
+  };
+  const removeService = async (id) => { await api.deleteService(id); load(); };
+
+  const addPhoto = async () => {
+    if (!photoFile) return;
+    setBusy(true); setErr("");
+    try {
+      const url = await api.uploadPhoto(photoFile);
+      const { error } = await api.addGalleryPhoto(provider.id, url, photos.length);
+      if (error) throw error;
+      setPhotoFile(null);
+      load();
+    } catch (e) { setErr(e.message || "Erreur"); }
+    setBusy(false);
+  };
+  const removePhoto = async (id) => { await api.deleteGalleryPhoto(id); load(); };
+
+  return (
+    <div className="rounded-xl p-3 space-y-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold" style={{ color: T.ink }}>Services &amp; photos — {provider.name}</span>
+        <button onClick={onClose} className="text-xs font-semibold" style={{ color: T.mute }}>Fermer</button>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => setTab("services")} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: tab === "services" ? T.orange : T.cream, color: tab === "services" ? "#fff" : T.ink }}>Services</button>
+        <button onClick={() => setTab("photos")} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: tab === "photos" ? T.orange : T.cream, color: tab === "photos" ? "#fff" : T.ink }}>Photos</button>
+      </div>
+      {err && <div className="text-[10px] font-semibold" style={{ color: T.orange }}>{err}</div>}
+
+      {tab === "services" ? (
+        <div className="space-y-2">
+          {services.map((s) => (
+            <div key={s.id} className="flex items-center justify-between rounded-lg px-2.5 py-1.5" style={{ background: T.cream }}>
+              <span className="text-xs" style={{ color: T.ink }}>{s.name} {s.price_text && <span style={{ color: T.mute }}>· {s.price_text}</span>}</span>
+              <button onClick={() => removeService(s.id)} className="text-[10px] font-semibold" style={{ color: "#B3261E" }}>Suppr.</button>
+            </div>
+          ))}
+          <div className="flex gap-1.5">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom du service" className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+            <input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="Prix" className="w-20 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+          </div>
+          <button onClick={addService} disabled={busy} className="w-full rounded-lg py-1.5 text-xs font-semibold text-white" style={{ background: T.navy }}>➕ Ajouter le service</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-4 gap-1.5">
+            {photos.map((p) => (
+              <div key={p.id} className="relative" style={{ aspectRatio: "1/1" }}>
+                <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }} />
+                <button onClick={() => removePhoto(p.id)} className="absolute top-0.5 right-0.5 rounded-full text-[9px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 16, height: 16, lineHeight: "16px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files[0] || null)} className="w-full text-[11px]" />
+          <button onClick={addPhoto} disabled={busy || !photoFile} className="w-full rounded-lg py-1.5 text-xs font-semibold text-white" style={{ background: T.navy, opacity: photoFile ? 1 : 0.5 }}>
+            {busy ? "Envoi…" : "➕ Ajouter la photo"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderEditForm({ provider, categories, onSave, onCancel }) {
+  const [form, setForm] = useState({
+    name: provider.name, category_id: provider.category_id, zone: provider.zone,
+    phone: provider.phone, whatsapp: provider.whatsapp || "", description: provider.description || "",
+    price_text: provider.price_text || "",
+  });
+  const [photoFile, setPhotoFile] = useState(null);
+  const [coords, setCoords] = useState(provider.lat && provider.lng ? { lat: provider.lat, lng: provider.lng } : null);
+  const [locating, setLocating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setPhoneField = (k) => (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+    setForm((f) => ({ ...f, [k]: digits }));
+  };
+  const formatPriceOnBlur = (e) => {
+    const v = e.target.value.trim();
+    if (v && /^[\d\s]+$/.test(v)) {
+      setForm((f) => ({ ...f, price_text: v + " FCFA" }));
+    }
+  };
+
+  const recapture = () => {
+    if (!navigator.geolocation) { setErr("Géolocalisation non supportée sur cet appareil."); return; }
+    setLocating(true); setErr("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setLocating(false); setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      () => { setLocating(false); setErr("Position indisponible."); },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const save = async () => {
+    if (!form.name || !form.phone) return;
+    setBusy(true); setErr("");
+    let payload = { ...form };
+    if (coords) { payload.lat = coords.lat; payload.lng = coords.lng; }
+    if (photoFile) {
+      try { payload.photo_url = await api.uploadPhoto(photoFile); }
+      catch (e) { setErr("Erreur photo : " + e.message); setBusy(false); return; }
+    }
+    const { error } = await api.updateProvider(provider.id, payload);
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onSave();
+  };
+
+  return (
+    <div className="rounded-xl p-3 space-y-2" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Nom</label>
+        <input value={form.name} onChange={set("name")} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Téléphone</label>
+        <input value={form.phone} onChange={setPhoneField("phone")} inputMode="numeric" maxLength={10} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>WhatsApp</label>
+        <input value={form.whatsapp} onChange={setPhoneField("whatsapp")} inputMode="numeric" maxLength={10} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Tarif indicatif</label>
+        <input value={form.price_text} onChange={set("price_text")} onBlur={formatPriceOnBlur} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Catégorie</label>
+        <select value={form.category_id} onChange={set("category_id")} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }}>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Zone</label>
+        <input value={form.zone} onChange={set("zone")} list="dabakala-zones" placeholder="Ex : Quartier Résidentiel"
+          className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Description</label>
+        <textarea value={form.description} onChange={set("description")} rows={2} className="w-full mt-0.5 rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Position GPS</label>
+        <button onClick={recapture} disabled={locating} type="button" className="w-full mt-0.5 rounded-lg py-1.5 text-[11px] font-semibold"
+          style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>
+          {locating ? "Localisation…" : coords ? `📍 Recapturer (actuelle : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)})` : "📍 Capturer la position actuelle"}
+        </button>
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold" style={{ color: T.mute }}>Nouvelle photo (optionnel)</label>
+        <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files[0] || null)} className="w-full mt-0.5 text-[11px]" />
+      </div>
+      {err && <div className="text-[10px] font-semibold" style={{ color: T.orange }}>{err}</div>}
+      <div className="flex gap-2 pt-1">
+        <button onClick={save} disabled={busy} className="flex-1 rounded-lg py-1.5 text-xs font-semibold text-white" style={{ background: T.navy, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "…" : "Enregistrer"}
+        </button>
+        <button onClick={onCancel} className="flex-1 rounded-lg py-1.5 text-xs font-semibold" style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NotificationBell({ items, storageKey }) {
+  const [open, setOpen] = useState(false);
+  const [lastSeen, setLastSeen] = useState(() => localStorage.getItem(storageKey) || "1970-01-01T00:00:00Z");
+  const unread = items.filter((i) => i.time > lastSeen).length;
+
+  const markRead = () => {
+    const now = new Date().toISOString();
+    localStorage.setItem(storageKey, now);
+    setLastSeen(now);
+  };
+
+  return (
+    <div className="relative">
+      <button onClick={() => { setOpen((o) => !o); if (!open) markRead(); }} style={{ position: "relative", fontSize: 18 }}>
+        🔔
+        {unread > 0 && (
+          <span className="absolute rounded-full font-bold" style={{ top: -4, right: -6, background: T.orange, color: "#fff", fontSize: 9, padding: "1px 4px" }}>
+            {unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 rounded-xl shadow-lg overflow-hidden" style={{ width: 260, maxHeight: 300, overflowY: "auto", background: "#fff", border: `1px solid ${T.line}`, zIndex: 50 }}>
+          <div className="px-3 py-2 text-xs font-bold" style={{ borderBottom: `1px solid ${T.line}`, color: T.ink, background: T.cream }}>
+            Notifications
+          </div>
+          {items.length === 0 && <div className="px-3 py-4 text-xs text-center" style={{ color: T.mute }}>Rien pour l'instant.</div>}
+          {items.slice(0, 20).map((it) => (
+            <div key={it.id} className="px-3 py-2 text-xs" style={{ borderBottom: `1px solid ${T.line}` }}>
+              <div style={{ color: T.ink }}>{it.text}</div>
+              <div style={{ color: T.mute, fontSize: 10 }}>{timeAgo(it.time)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentHome({ providers, categories, reviews, session, onChanged }) {
+  const [form, setForm] = useState({ name: "", category_id: "reparation", zone: ZONES[0], phone: "", whatsapp: "", description: "", price_text: "" });
+  const [coords, setCoords] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locateErr, setLocateErr] = useState("");
+  const [photoFile, setPhotoFile] = useState(null);
+  const [done, setDone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [extrasId, setExtrasId] = useState(null);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setPhoneField = (k) => (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+    setForm((f) => ({ ...f, [k]: digits }));
+  };
+  const formatPriceOnBlur = (e) => {
+    const v = e.target.value.trim();
+    if (v && /^[\d\s]+$/.test(v)) {
+      setForm((f) => ({ ...f, price_text: v + " FCFA" }));
+    }
+  };
+
+  const captureLocation = () => {
+    if (!navigator.geolocation) { setLocateErr("Géolocalisation non supportée sur cet appareil."); return; }
+    setLocating(true); setLocateErr("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setLocating(false); setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      () => { setLocating(false); setLocateErr("Position indisponible — autorise l'accès à la localisation, ou saisis la fiche depuis le lieu même."); },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const submit = async () => {
+    if (!form.name || !form.phone) return;
+    if (!coords) { setDone("Capture d'abord la position GPS (bouton ci-dessus)."); return; }
+    setBusy(true);
+    let photo_url = null;
+    if (photoFile) {
+      try { photo_url = await api.uploadPhoto(photoFile); }
+      catch (e) { setDone("Erreur photo : " + e.message); setBusy(false); return; }
+    }
+    const payload = { ...form, photo_url, added_by: session.user.id, verified_field: true, validated: false,
+      lat: coords.lat, lng: coords.lng };
+    const { error } = await api.insertProvider(payload);
+    setBusy(false);
+    if (error) { setDone("Erreur : " + error.message); return; }
+    setDone("Fiche enregistrée — en attente de validation admin.");
+    setForm({ name: "", category_id: "reparation", zone: ZONES[0], phone: "", whatsapp: "", description: "", price_text: "" });
+    setPhotoFile(null);
+    setCoords(null);
+    onChanged();
+    setTimeout(() => setDone(""), 2500);
+  };
+
+  const removeProvider = async (id) => {
+    if (!window.confirm("Supprimer définitivement cette fiche ?")) return;
+    await api.deleteProvider(id);
+    onChanged();
+  };
+
+  const myAdds = providers.filter((p) => p.added_by === session.user.id);
+
+  const notifItems = useMemo(() => {
+    const items = [];
+    myAdds.forEach((p) => {
+      if (p.validated) items.push({ id: "val-" + p.id, time: p.updated_at || p.created_at, text: `✅ Ta fiche « ${p.name} » a été validée par l'administration.` });
+    });
+    (reviews || []).filter((r) => r.providers && r.providers.added_by === session.user.id).forEach((r) => {
+      items.push({ id: "rev-" + r.id, time: r.created_at, text: `⭐ Nouvel avis (${r.rating}/5) sur « ${r.providers.name} ».` });
+    });
+    return items.sort((a, b) => new Date(b.time) - new Date(a.time));
+  }, [myAdds, reviews, session.user.id]);
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: T.cream }}>
+      <div className="px-4 py-3 flex items-center gap-2" style={{ background: T.navy }}>
+        <span style={{ color: "#fff" }}>➕</span><span className="text-white font-semibold flex-1">Inscription terrain</span>
+        <span style={{ color: "#fff" }}><NotificationBell items={notifItems} storageKey={`dabakala:notif:agent:${session.user.id}`} /></span>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        <div className="rounded-xl px-3 py-2.5 text-xs font-medium" style={{ background: "#EAF7EF", color: T.greenDeep }}>
+          🛡️ En validant cette fiche, vous confirmez vous être rendu(e) sur place. Le badge « Vérifié terrain » est posé automatiquement. La validation finale reste à l'administrateur.
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Nom de l'activité</label>
+          <input value={form.name} onChange={set("name")} placeholder="Ex : Koffi Plomberie" className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Téléphone</label>
+          <input value={form.phone} onChange={setPhoneField("phone")} placeholder="0707070707" inputMode="numeric" maxLength={10}
+            className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>WhatsApp</label>
+          <input value={form.whatsapp} onChange={setPhoneField("whatsapp")} placeholder="0707070707" inputMode="numeric" maxLength={10}
+            className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Tarif indicatif</label>
+          <input value={form.price_text} onChange={set("price_text")} onBlur={formatPriceOnBlur} placeholder="Ex : 5 000 FCFA"
+            className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Catégorie</label>
+          <select value={form.category_id} onChange={set("category_id")} className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }}>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Zone</label>
+          <input value={form.zone} onChange={set("zone")} list="dabakala-zones" placeholder="Ex : Quartier Résidentiel"
+            className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Description</label>
+          <textarea value={form.description} onChange={set("description")} rows={3} placeholder="Activité, spécialités..." className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none resize-none" style={{ background: "#fff", border: `1px solid ${T.line}`, color: T.ink }} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Position GPS</label>
+          <button onClick={captureLocation} disabled={locating} type="button"
+            className="w-full mt-1 rounded-lg py-2 text-xs font-semibold"
+            style={{ background: coords ? "#EAF7EF" : T.cream, border: `1px solid ${coords ? T.greenDeep : T.line}`, color: coords ? T.greenDeep : T.ink }}>
+            {locating ? "Localisation…" : coords ? `✅ Position capturée (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)})` : "📍 Capturer la position actuelle"}
+          </button>
+          {locateErr && <div className="text-[10px] font-semibold mt-1" style={{ color: T.orange }}>{locateErr}</div>}
+        </div>
+        <div>
+          <label className="text-xs font-semibold" style={{ color: T.mute }}>Photo (optionnel)</label>
+          <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files[0] || null)}
+            className="w-full mt-1 text-xs" />
+        </div>
+        <button onClick={submit} disabled={busy} className="w-full rounded-xl py-2.5 font-semibold text-white" style={{ background: T.orange, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Envoi…" : "➕ Enregistrer sur le terrain"}
+        </button>
+        {done && <div className="text-center text-sm font-semibold" style={{ color: T.greenDeep }}>{done}</div>}
+        <div className="pt-2">
+          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: T.mute }}>Mes inscriptions ({myAdds.length})</div>
+          <div className="space-y-2">
+            {myAdds.map((p) => (
+              editingId === p.id ? (
+                <ProviderEditForm key={p.id} provider={p} categories={categories}
+                  onCancel={() => setEditingId(null)}
+                  onSave={() => { setEditingId(null); onChanged(); }} />
+              ) : extrasId === p.id ? (
+                <ProviderExtrasManager key={p.id} provider={p} onClose={() => setExtrasId(null)} />
+              ) : (
+                <div key={p.id} className="rounded-xl p-2.5" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                  <div className="flex items-center gap-3">
+                    <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={36} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
+                      <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
+                    </div>
+                  </div>
+                  {!p.validated ? (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => setEditingId(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>✏️ Modifier</button>
+                      <button onClick={() => setExtrasId(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>🧰 Services/Photos</button>
+                      <button onClick={() => removeProvider(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: "#FDEDEC", color: "#B3261E" }}>🗑️</button>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] mt-1.5" style={{ color: T.mute }}>Validée — modification réservée à l'administrateur.</div>
+                  )}
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsersAdmin({ currentUserId }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    setUsers(error ? [] : data);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const changeRole = async (userId, role) => {
+    setMsg("");
+    const { error } = await supabase.rpc("set_user_role", { p_user_id: userId, p_role: role });
+    if (error) { setMsg("Erreur : " + error.message); return; }
+    load();
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: T.cream }}>
+      <div className="px-4 py-3" style={{ background: T.navy }}>
+        <div className="flex items-center gap-2 text-white font-semibold">👤 Utilisateurs</div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {msg && <div className="text-xs font-semibold" style={{ color: T.orange }}>{msg}</div>}
+        {loading && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Chargement…</div>}
+        {!loading && users.map((u) => (
+          <div key={u.id} className="rounded-xl p-3 flex items-center gap-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+            <AvatarBlock name={u.full_name || u.phone || "?"} size={40} />
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm truncate" style={{ color: T.ink }}>{u.full_name || "(sans nom)"}</div>
+              <div className="text-xs truncate" style={{ color: T.mute }}>{u.phone || "—"}</div>
+            </div>
+            <select
+              value={u.role}
+              disabled={u.id === currentUserId}
+              onChange={(e) => changeRole(u.id, e.target.value)}
+              className="text-xs font-semibold rounded-lg px-2 py-1.5"
+              style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}
+            >
+              <option value="client">client</option>
+              <option value="agent">agent</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+        ))}
+        {!loading && users.length === 0 && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucun utilisateur inscrit pour l'instant.</div>}
+      </div>
+    </div>
+  );
+}
+
+function CategoryRow({ cat, onSaved }) {
+  const [form, setForm] = useState({ label: cat.label, emoji: cat.emoji, color: cat.color, sort_order: cat.sort_order });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const dirty = form.label !== cat.label || form.emoji !== cat.emoji || form.color !== cat.color || form.sort_order !== cat.sort_order;
+
+  const save = async () => {
+    setBusy(true); setErr("");
+    const { error } = await api.updateCategory(cat.id, { ...form, sort_order: Number(form.sort_order) });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onSaved();
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Supprimer la catégorie « ${cat.label} » ? Impossible si des prestataires l'utilisent encore.`)) return;
+    const { error } = await api.deleteCategory(cat.id);
+    if (error) { setErr("Suppression impossible : des prestataires utilisent encore cette catégorie."); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="rounded-xl p-2.5" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+      <div className="flex items-center gap-2">
+        <input value={form.emoji} onChange={(e) => setForm((f) => ({ ...f, emoji: e.target.value }))}
+          className="w-10 text-center rounded-lg py-1.5 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+          className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+          className="w-8 h-8 rounded-lg" style={{ border: `1px solid ${T.line}` }} />
+        <input type="number" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
+          className="w-12 text-center rounded-lg py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+      </div>
+      {err && <div className="text-[10px] font-semibold mt-1" style={{ color: T.orange }}>{err}</div>}
+      <div className="flex gap-2 mt-2">
+        <button onClick={save} disabled={!dirty || busy} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold text-white"
+          style={{ background: T.navy, opacity: dirty && !busy ? 1 : 0.4 }}>
+          {busy ? "…" : "Enregistrer"}
+        </button>
+        <button onClick={remove} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: "#FDEDEC", color: "#B3261E" }}>
+          🗑️ Supprimer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CategoriesAdmin({ categories, onChanged }) {
+  const [newCat, setNewCat] = useState({ id: "", label: "", emoji: "🔧", color: "#F5821F", sort_order: (categories.length + 1) * 10 });
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    if (!newCat.id || !newCat.label) { setErr("Identifiant et libellé requis."); return; }
+    setBusy(true); setErr("");
+    const { error } = await api.insertCategory({ ...newCat, id: newCat.id.trim().toLowerCase().replace(/\s+/g, "-"), sort_order: Number(newCat.sort_order) });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    setNewCat({ id: "", label: "", emoji: "🔧", color: "#F5821F", sort_order: (categories.length + 2) * 10 });
+    onChanged();
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2" style={{ background: T.cream }}>
+      <div className="text-xs font-semibold" style={{ color: T.mute }}>Emoji · libellé · couleur · ordre</div>
+      {categories.map((c) => <CategoryRow key={c.id} cat={c} onSaved={onChanged} />)}
+
+      <div className="rounded-xl p-3 mt-3" style={{ background: "#fff", border: `1px dashed ${T.line}` }}>
+        <div className="text-xs font-bold mb-2" style={{ color: T.ink }}>Ajouter une catégorie</div>
+        <div className="flex items-center gap-2 mb-2">
+          <input value={newCat.emoji} onChange={(e) => setNewCat((f) => ({ ...f, emoji: e.target.value }))} placeholder="🔧"
+            className="w-10 text-center rounded-lg py-1.5 text-sm outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+          <input value={newCat.label} onChange={(e) => setNewCat((f) => ({ ...f, label: e.target.value }))} placeholder="Libellé"
+            className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+          <input type="color" value={newCat.color} onChange={(e) => setNewCat((f) => ({ ...f, color: e.target.value }))}
+            className="w-8 h-8 rounded-lg" style={{ border: `1px solid ${T.line}` }} />
+        </div>
+        <input value={newCat.id} onChange={(e) => setNewCat((f) => ({ ...f, id: e.target.value }))} placeholder="identifiant unique (ex : jardinage)"
+          className="w-full mb-2 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
+        {err && <div className="text-[10px] font-semibold mb-2" style={{ color: T.orange }}>{err}</div>}
+        <button onClick={add} disabled={busy} className="w-full rounded-lg py-2 text-xs font-semibold text-white" style={{ background: T.orange, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "…" : "➕ Ajouter"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `il y a ${days} j`;
+  return new Date(iso).toLocaleDateString("fr-FR");
+}
+
+function BarRow({ label, emoji, count, max, color }) {
+  const pct = max ? Math.round((count / max) * 100) : 0;
+  return (
+    <div className="mb-2">
+      <div className="flex items-center justify-between text-xs mb-0.5">
+        <span style={{ color: T.ink }}>{emoji ? `${emoji} ` : ""}{label}</span>
+        <span className="font-semibold" style={{ color: T.mute }}>{count}</span>
+      </div>
+      <div className="w-full rounded-full h-2" style={{ background: T.line }}>
+        <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: color || T.orange }} />
+      </div>
+    </div>
+  );
+}
+
+function StatsAdmin({ providers, categories }) {
+  const total = providers.length;
+  const validated = providers.filter((p) => p.validated).length;
+  const pending = total - validated;
+  const verifiedField = providers.filter((p) => p.verified_field).length;
+  const totalReviews = providers.reduce((s, p) => s + (p.reviews_count || 0), 0);
+  const ratedProviders = providers.filter((p) => p.reviews_count > 0);
+  const avgRating = ratedProviders.length
+    ? (ratedProviders.reduce((s, p) => s + p.rating, 0) / ratedProviders.length).toFixed(1)
+    : "—";
+
+  const byCategory = categories
+    .map((c) => ({ ...c, count: providers.filter((p) => p.category_id === c.id).length }))
+    .filter((c) => c.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const maxCat = Math.max(1, ...byCategory.map((c) => c.count));
+
+  const zonesCount = {};
+  providers.forEach((p) => { zonesCount[p.zone] = (zonesCount[p.zone] || 0) + 1; });
+  const byZone = Object.entries(zonesCount).sort((a, b) => b[1] - a[1]);
+  const maxZone = Math.max(1, ...byZone.map(([, c]) => c));
+
+  const recent = [...providers].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
+
+  const KPI = ({ label, value, color }) => (
+    <div className="rounded-lg px-2 py-2" style={{ background: "rgba(255,255,255,0.12)" }}>
+      <div className="text-white text-lg font-bold" style={{ color: color }}>{value}</div>
+      <div className="text-[10px]" style={{ color: "#C9D5EA" }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto" style={{ background: T.cream }}>
+      <div className="px-4 pt-3 pb-4" style={{ background: T.navy }}>
+        <div className="grid grid-cols-3 gap-2">
+          <KPI label="Prestataires" value={total} />
+          <KPI label="Validés" value={validated} />
+          <KPI label="En attente" value={pending} />
+          <KPI label="Vérifiés terrain" value={verifiedField} />
+          <KPI label="Avis totaux" value={totalReviews} />
+          <KPI label="Note moyenne" value={avgRating} />
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-5">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: T.mute }}>Par catégorie</div>
+          {byCategory.length === 0 && <div className="text-xs" style={{ color: T.mute }}>Aucune donnée.</div>}
+          {byCategory.map((c) => (
+            <BarRow key={c.id} label={c.label} emoji={c.emoji} count={c.count} max={maxCat} color={c.color} />
+          ))}
+        </div>
+
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: T.mute }}>Par zone</div>
+          {byZone.length === 0 && <div className="text-xs" style={{ color: T.mute }}>Aucune donnée.</div>}
+          {byZone.map(([zone, count]) => (
+            <BarRow key={zone} label={zone} count={count} max={maxZone} color={T.blue} />
+          ))}
+        </div>
+
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: T.mute }}>Derniers ajouts</div>
+          <div className="space-y-2">
+            {recent.length === 0 && <div className="text-xs" style={{ color: T.mute }}>Aucun prestataire pour l'instant.</div>}
+            {recent.map((p) => (
+              <div key={p.id} className="rounded-xl p-2.5 flex items-center gap-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+                <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={36} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
+                  <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
+                </div>
+                <div className="text-[10px] text-right shrink-0" style={{ color: T.mute }}>{timeAgo(p.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminNav({ section, setSection }) {
+  const items = [
+    ["providers", "Prestataires"],
+    ["users", "Utilisateurs"],
+    ["categories", "Catégories"],
+    ["stats", "Stats"],
+  ];
+  return (
+    <div className="flex px-4 pt-3 pb-1 gap-1.5" style={{ background: T.cream }}>
+      {items.map(([id, label]) => (
+        <button key={id} onClick={() => setSection(id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold"
+          style={section === id ? { background: T.orange, color: "#fff" } : { background: "#fff", color: T.ink, border: `1px solid ${T.line}` }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdminHome({ providers, categories, reviews, session, onChanged, onCategoriesChanged }) {
+  const [tab, setTab] = useState("pending");
+  const [section, setSection] = useState("providers");
+  const [editingId, setEditingId] = useState(null);
+  const [extrasId, setExtrasId] = useState(null);
+  const pending = providers.filter((p) => !p.validated);
+  const validated = providers.filter((p) => p.validated);
+  const list = tab === "pending" ? pending : validated;
+
+  const validate = async (id, value) => { await api.setValidated(id, value); onChanged(); };
+  const toggleField = async (id, current) => { await api.setVerifiedField(id, !current); onChanged(); };
+  const removeProvider = async (id) => {
+    if (!window.confirm("Supprimer définitivement cette fiche ?")) return;
+    await api.deleteProvider(id);
+    onChanged();
+  };
+
+  const notifItems = useMemo(() => {
+    const items = [];
+    pending.forEach((p) => items.push({ id: "new-" + p.id, time: p.created_at, text: `🆕 Nouvelle fiche à valider : « ${p.name} ».` }));
+    (reviews || []).forEach((r) => items.push({ id: "rev-" + r.id, time: r.created_at, text: `⭐ Avis (${r.rating}/5) sur « ${r.providers ? r.providers.name : "un prestataire"} ».` }));
+    return items.sort((a, b) => new Date(b.time) - new Date(a.time));
+  }, [pending, reviews]);
+
+  const bell = <NotificationBell items={notifItems} storageKey={`dabakala:notif:admin:${session.user.id}`} />;
+
+  if (section === "users") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-end px-4 pt-2" style={{ background: T.cream }}>{bell}</div>
+        <AdminNav section={section} setSection={setSection} />
+        <div className="flex-1 min-h-0"><UsersAdmin currentUserId={session.user.id} /></div>
+      </div>
+    );
+  }
+
+  if (section === "categories") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-end px-4 pt-2" style={{ background: T.cream }}>{bell}</div>
+        <AdminNav section={section} setSection={setSection} />
+        <CategoriesAdmin categories={categories} onChanged={onCategoriesChanged} />
+      </div>
+    );
+  }
+
+  if (section === "stats") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-end px-4 pt-2" style={{ background: T.cream }}>{bell}</div>
+        <AdminNav section={section} setSection={setSection} />
+        <StatsAdmin providers={providers} categories={categories} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: T.cream }}>
+      <div className="px-4 py-3" style={{ background: T.navy }}>
+        <div className="flex items-center gap-2 text-white font-semibold">
+          <span className="flex-1">📋 Panel Admin</span>
+          <span style={{ color: "#fff" }}>{bell}</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-lg px-2 py-1.5" style={{ background: "rgba(255,255,255,0.12)" }}>
+            <div className="text-white text-lg font-bold">{providers.length}</div>
+            <div className="text-[10px]" style={{ color: "#C9D5EA" }}>Prestataires</div>
+          </div>
+          <div className="rounded-lg px-2 py-1.5" style={{ background: "rgba(255,255,255,0.12)" }}>
+            <div className="text-white text-lg font-bold">{pending.length}</div>
+            <div className="text-[10px]" style={{ color: "#C9D5EA" }}>En attente</div>
+          </div>
+        </div>
+      </div>
+      <AdminNav section={section} setSection={setSection} />
+      <div className="flex px-4 pt-2 gap-2">
+        <button onClick={() => setTab("pending")} className="flex-1 rounded-lg py-1.5 text-xs font-semibold" style={{ background: tab === "pending" ? T.blue : "#fff", color: tab === "pending" ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>À valider ({pending.length})</button>
+        <button onClick={() => setTab("validated")} className="flex-1 rounded-lg py-1.5 text-xs font-semibold" style={{ background: tab === "validated" ? T.blue : "#fff", color: tab === "validated" ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>Validés ({validated.length})</button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {list.length === 0 && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Rien ici pour l'instant.</div>}
+        {list.map((p) => {
+          const cat = categories.find((c) => c.id === p.category_id) || {};
+          if (editingId === p.id) {
+            return (
+              <ProviderEditForm key={p.id} provider={p} categories={categories}
+                onCancel={() => setEditingId(null)}
+                onSave={() => { setEditingId(null); onChanged(); }} />
+            );
+          }
+          if (extrasId === p.id) {
+            return <ProviderExtrasManager key={p.id} provider={p} onClose={() => setExtrasId(null)} />;
+          }
+          return (
+            <div key={p.id} className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${T.line}` }}>
+              <div className="flex items-center gap-3">
+                <PhotoOrAvatar photoUrl={p.photo_url} name={p.name} size={44} color={cat.color} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate" style={{ color: T.ink }}>{p.name}</div>
+                  <div className="text-xs" style={{ color: T.mute }}>{cat.label} · {p.zone}</div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <StatusBadges verifiedField={p.verified_field} validated={p.validated} compact />
+                <button onClick={() => toggleField(p.id, p.verified_field)} className="text-[11px] font-semibold underline" style={{ color: T.mute }}>
+                  {p.verified_field ? "Retirer terrain" : "Marquer terrain"}
+                </button>
+              </div>
+              <div className="mt-2 flex gap-2">
+                {!p.validated ? (
+                  <button onClick={() => validate(p.id, true)} className="flex-1 rounded-lg py-2 text-xs font-semibold text-white" style={{ background: T.blue }}>✔ Valider le profil</button>
+                ) : (
+                  <button onClick={() => validate(p.id, false)} className="flex-1 rounded-lg py-2 text-xs font-semibold" style={{ background: "#F3F1EA", color: T.ink }}>✕ Retirer la validation</button>
+                )}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => setEditingId(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>✏️ Modifier</button>
+                <button onClick={() => setExtrasId(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: T.cream, border: `1px solid ${T.line}`, color: T.ink }}>🧰 Services/Photos</button>
+                <button onClick={() => removeProvider(p.id)} className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold" style={{ background: "#FDEDEC", color: "#B3261E" }}>🗑️</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [role, setRole] = useState("user");
+  const [userTab, setUserTab] = useState("home");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [providers, setProviders] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
+  const [openProvider, setOpenProvider] = useState(null);
+  const openProviderById = (id) => {
+    setOpenProvider(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("prestataire", id);
+    window.history.replaceState({}, "", url);
+  };
+  const closeProvider = () => {
+    setOpenProvider(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("prestataire");
+    window.history.replaceState({}, "", url);
+  };
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const refreshProviders = async () => setProviders(await api.fetchProviders());
+  const refreshCategories = async () => setCategories(await api.fetchCategories());
+  const refreshReviews = async () => setReviews(await api.fetchRecentReviews());
+
+  useEffect(() => {
+    if (!isConfigured) { setLoaded(true); return; }
+    (async () => {
+      setCategories(await api.fetchCategories());
+      const list = await api.fetchProviders();
+      setProviders(list);
+      const sharedId = new URLSearchParams(window.location.search).get("prestataire");
+      if (sharedId && list.some((p) => p.id === sharedId)) {
+        setRole("user");
+        setOpenProvider(sharedId);
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      if (session) {
+        setProfile(await api.getProfile(session.user.id));
+        refreshReviews();
+      }
+      setLoaded(true);
+    })();
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, sess) => {
+      setSession(sess);
+      setProfile(sess ? await api.getProfile(sess.user.id) : null);
+      refreshProviders();
+      if (sess) refreshReviews();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  if (!isConfigured) {
+    return (
+      <div className="w-full" style={{ minHeight: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto" }}>
+        <SetupNotice />
+      </div>
+    );
+  }
+
+  const ROLES = [
+    { id: "user", label: "Espace utilisateur", icon: "user" },
+    { id: "agent", label: "Espace agent", icon: "wrench" },
+    { id: "admin", label: "Espace admin", icon: "shieldCheck" },
+  ];
+  const BOTTOM_TABS = [
+    { id: "home", label: "Accueil", icon: "home" },
+    { id: "search", label: "Recherche", icon: "search" },
+    { id: "favorites", label: "Favoris", icon: "heart" },
+    { id: "profile", label: "Profil", icon: "user" },
+  ];
+
+  const showBottomNav = role === "user" && !openProvider;
+
+  return (
+    <div className="flex flex-col w-full" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
+      <datalist id="dabakala-zones">
+        {ZONES.map((z) => <option key={z} value={z} />)}
+      </datalist>
+
+      {/* Barre du haut : menu hamburger + profil */}
+      {!openProvider && (
+        <div className="relative flex items-center justify-between px-4 py-3" style={{ background: "#fff", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
+          <button onClick={() => setMenuOpen((v) => !v)} style={{ color: T.ink }}><Icon name="menu" size={22} /></button>
+          <button onClick={() => { setRole("user"); setUserTab("profile"); }} className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: T.bg, border: `1px solid ${T.line}`, color: T.navy }}>
+            <Icon name="user" size={16} />
+          </button>
+
+          {menuOpen && (
+            <>
+              <div onClick={() => setMenuOpen(false)} className="fixed inset-0" style={{ zIndex: 60, background: "rgba(0,0,0,0.15)" }} />
+              <div className="absolute left-4 top-14 rounded-2xl overflow-hidden" style={{ background: "#fff", boxShadow: "0 6px 24px rgba(0,0,0,0.18)", zIndex: 61, width: 220 }}>
+                {ROLES.map((r) => (
+                  <button key={r.id} onClick={() => { setRole(r.id); setMenuOpen(false); closeProvider(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left"
+                    style={{ background: role === r.id ? T.bg : "#fff", color: role === r.id ? T.navy : T.ink, borderBottom: `1px solid ${T.line}` }}>
+                    <Icon name={r.icon} size={16} color={role === r.id ? T.navy : T.mute} /> {r.label}
+                  </button>
+                ))}
+                {session && (
+                  <button onClick={() => { supabase.auth.signOut(); setMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left" style={{ color: "#B3261E" }}>
+                    <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {session && !openProvider && (
+        <div className="flex items-center justify-between px-3 py-1 text-[10px]" style={{ background: T.bg, color: T.mute, flexShrink: 0 }}>
+          <span>{session.user.email} · {profile ? profile.role : "…"}</span>
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0">
+        {!loaded ? (
+          <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
+        ) : openProvider ? (
+          <ProviderSheet provider={providers.find((p) => p.id === openProvider) || openProvider} categories={categories} session={session} onBack={closeProvider} />
+        ) : role === "user" ? (
+          <UserHome providers={providers} categories={categories} session={session} onOpen={(p) => openProviderById(p.id)} userTab={userTab} onNavigate={setUserTab} />
+        ) : role === "agent" ? (
+          <AuthGate session={session} profile={profile} allow={["agent", "admin"]}>
+            <AgentHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} />
+          </AuthGate>
+        ) : (
+          <AuthGate session={session} profile={profile} allow={["admin"]}>
+            <AdminHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} onCategoriesChanged={refreshCategories} />
+          </AuthGate>
+        )}
+      </div>
+
+      {/* Navigation en bas — écran Utilisateur uniquement */}
+      {showBottomNav && (
+        <div className="flex" style={{ background: "#fff", borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+          {BOTTOM_TABS.map((t) => {
+            const active = userTab === t.id;
+            return (
+              <button key={t.id} onClick={() => setUserTab(t.id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+                <Icon name={t.icon} size={20} color={active ? T.navy : T.mute} filled={active && t.id === "favorites"} />
+                <span className="text-[10px] font-semibold" style={{ color: active ? T.navy : T.mute }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+})();
+}
+</script>
+</body>
+</html>
