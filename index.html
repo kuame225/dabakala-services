@@ -2075,7 +2075,11 @@ function ProviderSignupForm({ categories, onDone }) {
     const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
     if (error) { setErr(error.message); setBusy(false); return; }
 
-    if (!data.session) {
+    if (!data || !data.session) {
+      localStorage.setItem("dabakala:draftActivity", JSON.stringify({
+        name: actName, category_id: categoryId, description, zone, phone,
+        whatsappSame: sameWhatsapp, whatsappOther, availability, urgence,
+      }));
       setStep("pendingConfirm");
       setBusy(false);
       return;
@@ -2212,13 +2216,35 @@ function ProviderSignupForm({ categories, onDone }) {
 
 function ProviderOnboarding({ session, categories, onClose, onDone }) {
   const [showAuth, setShowAuth] = useState(false);
-  const [form, setForm] = useState({ name: "", category_id: categories[0]?.id || "reparation", zone: "", phone: "", whatsapp: "", description: "", price_text: "" });
+  const [restoredDraft, setRestoredDraft] = useState(false);
+  const [form, setForm] = useState(() => {
+    const base = { name: "", category_id: categories[0]?.id || "reparation", zone: "", phone: "", whatsapp: "", description: "", price_text: "" };
+    try {
+      const raw = localStorage.getItem("dabakala:draftActivity");
+      if (raw) {
+        const d = JSON.parse(raw);
+        return { ...base, name: d.name || "", category_id: d.category_id || base.category_id, zone: d.zone || "", description: d.description || "",
+          phone: d.phone || "", whatsapp: d.whatsappSame ? (d.phone || "") : (d.whatsappOther || "") };
+      }
+    } catch (e) { /* brouillon invalide, on ignore */ }
+    return base;
+  });
+  const [draftAvailability, setDraftAvailability] = useState(() => {
+    try {
+      const raw = localStorage.getItem("dabakala:draftActivity");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  });
   const [coords, setCoords] = useState(null);
   const [locating, setLocating] = useState(false);
   const [photoFile, setPhotoFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (draftAvailability) setRestoredDraft(true);
+  }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setPhoneField = (k) => (e) => {
@@ -2261,11 +2287,16 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
       try { photo_url = await api.uploadPhoto(photoFile); }
       catch (e) { setErr("Erreur photo : " + e.message); setBusy(false); return; }
     }
+    const availabilityText = draftAvailability && draftAvailability.availability
+      ? draftAvailability.availability + (draftAvailability.urgence ? " · Service d'urgence 24h/24" : "")
+      : undefined;
     const payload = { ...form, photo_url, added_by: session.user.id, verified_field: false, validated: false,
-      lat: coords ? coords.lat : null, lng: coords ? coords.lng : null };
+      lat: coords ? coords.lat : null, lng: coords ? coords.lng : null,
+      ...(availabilityText ? { availability: availabilityText } : {}) };
     const { error } = await api.insertProvider(payload);
     setBusy(false);
     if (error) { setErr(error.message); return; }
+    localStorage.removeItem("dabakala:draftActivity");
     setDone(true);
   };
 
@@ -2292,6 +2323,11 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
         <span className="font-bold text-sm" style={{ color: T.ink }}>Inscrire mon activité</span>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {restoredDraft && (
+          <div className="rounded-xl px-3 py-2.5 text-xs font-semibold flex items-center gap-2" style={{ background: "#EAF7EF", color: T.greenDeep }}>
+            <Icon name="checkCircle" size={15} color={T.greenDeep} filled /> Tes informations précédentes ont été restaurées.
+          </div>
+        )}
         <div className="rounded-xl px-3 py-2.5 text-xs font-medium" style={{ background: "#EAF0FB", color: T.navy }}>
           Votre fiche sera examinée par l'administration avant d'apparaître publiquement. Le badge « Vérifié terrain » n'est posé que lors d'une visite d'un agent.
         </div>
@@ -3337,7 +3373,7 @@ function App() {
     { id: "profile", label: "Profil", icon: "user" },
   ];
 
-  const showBottomNav = role === "user" && !openProvider && !showDashboard;
+  const showBottomNav = role === "user" && !openProvider && !showDashboard && !showOnboarding;
 
   return (
     <div className="flex flex-col w-full" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
@@ -3346,7 +3382,7 @@ function App() {
       </datalist>
 
       {/* Barre du haut : menu hamburger + profil */}
-      {!openProvider && !showDashboard && (
+      {!openProvider && !showDashboard && !showOnboarding && (
         <div className="relative flex items-center justify-between px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={() => setMenuOpen((v) => !v)} style={{ color: T.ink }}><Icon name="menu" size={22} /></button>
           <button onClick={() => { setRole("user"); setUserTab("profile"); setShowDashboard(false); }} className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: T.bg, border: `1px solid ${T.line}`, color: T.navy }}>
