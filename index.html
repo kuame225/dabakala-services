@@ -2175,6 +2175,22 @@ function App() {
     );
   }
 
+  if (!loaded) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center" style={{ height: "100dvh", background: `linear-gradient(160deg, ${T.navy} 0%, #0A3576 100%)`, maxWidth: 480, margin: "0 auto" }}>
+        <div className="rounded-3xl flex items-center justify-center" style={{ width: 84, height: 84, background: "rgba(255,255,255,0.12)" }}>
+          <Icon name="handshake" size={40} color="#fff" strokeWidth={1.6} />
+        </div>
+        <div className="mt-5 font-extrabold text-2xl">
+          <span style={{ color: "#fff" }}>Dabakala</span> <span style={{ color: T.orange }}>Services</span>
+        </div>
+        <div className="text-xs mt-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>Le service qu'il vous faut, près de chez vous.</div>
+        <div className="mt-8" style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid rgba(255,255,255,0.25)", borderTopColor: "#fff", animation: "dabakala-spin 0.8s linear infinite" }} />
+        <style>{`@keyframes dabakala-spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
   const ROLES = [
     { id: "user", label: "Espace utilisateur", icon: "user" },
     { id: "agent", label: "Espace agent", icon: "wrench" },
