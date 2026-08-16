@@ -210,6 +210,8 @@ const ICON_PATHS = {
   moon: <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />,
   sun: <><circle cx="12" cy="12" r="4.5" /><line x1="12" y1="2.5" x2="12" y2="4.5" /><line x1="12" y1="19.5" x2="12" y2="21.5" /><line x1="4.2" y1="4.2" x2="5.6" y2="5.6" /><line x1="18.4" y1="18.4" x2="19.8" y2="19.8" /><line x1="2.5" y1="12" x2="4.5" y2="12" /><line x1="19.5" y1="12" x2="21.5" y2="12" /><line x1="4.2" y1="19.8" x2="5.6" y2="18.4" /><line x1="18.4" y1="5.6" x2="19.8" y2="4.2" /></>,
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,
+  chart: <><line x1="4" y1="20" x2="20" y2="20" /><rect x="6" y="12" width="3" height="7" /><rect x="11" y="7" width="3" height="12" /><rect x="16" y="15" width="3" height="4" /></>,
+  settings: <><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V19a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1z" /></>,
   users: <><circle cx="9" cy="8" r="3.2" /><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6" /><circle cx="17" cy="9" r="2.6" /><path d="M15 14.2c2.6.5 4.5 2.6 4.5 5.3" /></>,
   gift: <><rect x="3" y="8.5" width="18" height="4" rx="0.8" /><rect x="4.5" y="12.5" width="15" height="8" rx="0.8" /><line x1="12" y1="8.5" x2="12" y2="20.5" /><path d="M12 8.5c0-2.5-2-4.5-3.8-4-1.4.4-1.7 2.6.3 3.4.9.4 2 .6 3.5.6z" /><path d="M12 8.5c0-2.5 2-4.5 3.8-4 1.4.4 1.7 2.6-.3 3.4-.9.4-2 .6-3.5.6z" /></>,
   store: <><path d="M3 9.5 4.5 4h15L21 9.5" /><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" /><path d="M5 9.8V20h14V9.8" /><rect x="9.5" y="14" width="5" height="6" /></>,
@@ -345,6 +347,12 @@ const api = {
   },
   async sendRequestMessage(requestId, senderId, body) {
     return supabase.from("request_messages").insert({ request_id: requestId, sender_id: senderId, body });
+  },
+  async replyToReview(reviewId, reply) {
+    return supabase.rpc("reply_to_review", { p_review_id: reviewId, p_reply: reply });
+  },
+  async flagReview(reviewId, value) {
+    return supabase.rpc("flag_review", { p_review_id: reviewId, p_value: value });
   },
   async upsertReview(providerId, userId, rating, comment) {
     return supabase.from("reviews").upsert(
@@ -715,6 +723,12 @@ function ReviewsSection({ provider, session }) {
               <div className="text-[10px]" style={{ color: T.mute, flexShrink: 0 }}>{timeAgo(r.created_at)}</div>
             </div>
             {r.comment && <p className="text-xs mt-2" style={{ color: T.ink }}>{r.comment}</p>}
+            {r.provider_reply && (
+              <div className="mt-2 rounded-xl p-2.5" style={{ background: T.bg, borderLeft: `3px solid ${T.blue}` }}>
+                <div className="text-[10px] font-bold" style={{ color: T.blue }}>Réponse du prestataire</div>
+                <p className="text-xs mt-0.5" style={{ color: T.ink }}>{r.provider_reply}</p>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1741,8 +1755,8 @@ function UserHome({ providers, categories, session, onOpen, userTab, onNavigate,
   );
 }
 
-function ProviderExtrasManager({ provider, onClose }) {
-  const [tab, setTab] = useState("services");
+function ProviderExtrasManager({ provider, onClose, initialTab }) {
+  const [tab, setTab] = useState(initialTab || "services");
   const [services, setServices] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [newName, setNewName] = useState("");
@@ -2381,15 +2395,204 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
   );
 }
 
-function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
+function ProviderAvisScreen({ provider, session, onBack, onChanged }) {
+  const [reviews, setReviews] = useState(null);
+  const [filter, setFilter] = useState(0);
+  const [replyingId, setReplyingId] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.fetchReviews(provider.id).then(setReviews);
+  useEffect(load, [provider.id]);
+
+  const visible = filter ? (reviews || []).filter((r) => r.rating === filter) : (reviews || []);
+  const avg = reviews && reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : "—";
+
+  const submitReply = async (id) => {
+    setBusy(true);
+    await api.replyToReview(id, replyText.trim());
+    setBusy(false);
+    setReplyingId(null); setReplyText("");
+    load();
+    onChanged && onChanged();
+  };
+
+  const toggleFlag = async (r) => {
+    await api.flagReview(r.id, !r.flagged);
+    load();
+  };
+
+  return (
+    <ProfileSubScreen title="Avis clients" onBack={onBack}>
+      <div className="rounded-2xl p-3 mb-3 flex items-center justify-between" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2">
+          <Icon name="star" size={20} color={T.gold} filled />
+          <span className="font-extrabold text-lg" style={{ color: T.ink }}>{avg}</span>
+          <span className="text-xs" style={{ color: T.mute }}>({reviews ? reviews.length : 0} avis)</span>
+        </div>
+      </div>
+
+      <div className="flex gap-1.5 overflow-x-auto mb-3" style={{ scrollbarWidth: "none" }}>
+        {[0, 5, 4, 3, 2, 1].map((n) => (
+          <button key={n} onClick={() => setFilter(n)} className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+            style={{ background: filter === n ? T.navy : "var(--card)", color: filter === n ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>
+            {n === 0 ? "Tous" : `${n} ★`}
+          </button>
+        ))}
+      </div>
+
+      {reviews === null ? (
+        <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} height={70} radius={16} />)}</div>
+      ) : visible.length === 0 ? (
+        <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucun avis {filter ? `à ${filter} étoiles` : ""} pour l'instant.</div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map((r) => (
+            <div key={r.id} className="rounded-2xl p-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm" style={{ color: T.ink }}>{r.profiles?.full_name || "Client"}</div>
+                  <StarRow rating={r.rating} size={11} />
+                </div>
+                <div className="text-[10px]" style={{ color: T.mute }}>{timeAgo(r.created_at)}</div>
+              </div>
+              {r.comment && <p className="text-xs mt-2" style={{ color: T.ink }}>{r.comment}</p>}
+              {r.provider_reply && (
+                <div className="mt-2 rounded-xl p-2.5" style={{ background: T.bg, borderLeft: `3px solid ${T.blue}` }}>
+                  <div className="text-[10px] font-bold" style={{ color: T.blue }}>Votre réponse</div>
+                  <p className="text-xs mt-0.5" style={{ color: T.ink }}>{r.provider_reply}</p>
+                </div>
+              )}
+              {replyingId === r.id ? (
+                <div className="mt-2">
+                  <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={2} placeholder="Votre réponse…"
+                    className="w-full rounded-lg px-2.5 py-2 text-xs outline-none resize-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+                  <div className="flex gap-2 mt-1.5">
+                    <button onClick={() => submitReply(r.id)} disabled={busy} className="flex-1 rounded-lg py-1.5 text-xs font-bold text-white" style={{ background: T.blue }}>Envoyer</button>
+                    <button onClick={() => setReplyingId(null)} className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ color: T.mute }}>Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3 mt-2">
+                  <button onClick={() => { setReplyingId(r.id); setReplyText(r.provider_reply || ""); }} className="text-[11px] font-bold" style={{ color: T.blue }}>
+                    {r.provider_reply ? "Modifier ma réponse" : "Répondre"}
+                  </button>
+                  <button onClick={() => toggleFlag(r)} className="text-[11px] font-bold" style={{ color: r.flagged ? "#B3261E" : T.mute }}>
+                    {r.flagged ? "✓ Signalé" : "Signaler"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </ProfileSubScreen>
+  );
+}
+
+function ProviderStatsScreen({ provider, requestsCount, reviewsCount, avgRating, onBack }) {
+  return (
+    <ProfileSubScreen title="Statistiques" onBack={onBack}>
+      <div className="space-y-2.5">
+        {[
+          ["eye", "Vues du profil", provider.views_count || 0, T.greenDeep],
+          ["chat", "Demandes reçues", requestsCount, T.blue],
+          ["star", "Avis reçus", reviewsCount, T.gold],
+          ["star", "Note moyenne", avgRating, T.gold],
+        ].map(([icon, label, value, color]) => (
+          <div key={label} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+            <div className="rounded-full flex items-center justify-center" style={{ width: 42, height: 42, background: T.bg, flexShrink: 0 }}>
+              <Icon name={icon} size={19} color={color} filled={icon === "star"} />
+            </div>
+            <div className="flex-1">
+              <div className="font-extrabold text-lg" style={{ color: T.ink }}>{value}</div>
+              <div className="text-xs" style={{ color: T.mute }}>{label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs mt-4 text-center" style={{ color: T.mute }}>
+        Chiffres cumulés depuis la création de votre fiche. Un suivi de l'évolution jour par jour pourra être ajouté plus tard si utile.
+      </p>
+    </ProfileSubScreen>
+  );
+}
+
+function ProviderNotificationsScreen({ items, onBack }) {
+  return (
+    <ProfileSubScreen title="Notifications" onBack={onBack}>
+      {items.length === 0 ? (
+        <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucune notification pour l'instant.</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.id} className="rounded-2xl p-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+              <div className="text-sm" style={{ color: T.ink }}>{it.text}</div>
+              <div className="text-[10px] mt-1" style={{ color: T.mute }}>{timeAgo(it.time)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </ProfileSubScreen>
+  );
+}
+
+function ProviderSettingsScreen({ session, theme, setTheme, onBack }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { api.getProfile(session.user.id).then((p) => setName(p?.full_name || "")); }, [session]);
+
+  const save = async () => {
+    setSaving(true);
+    await api.updateFullName(session.user.id, name);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <ProfileSubScreen title="Paramètres" onBack={onBack}>
+      <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <label className="text-xs font-semibold" style={{ color: T.mute }}>Nom complet</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.bg, border: `1px solid ${T.line}`, color: T.ink }} />
+        <label className="text-xs font-semibold mt-3 block" style={{ color: T.mute }}>Email</label>
+        <div className="w-full mt-1 rounded-lg px-3 py-2 text-sm" style={{ background: T.bg, color: T.mute }}>{session.user.email}</div>
+        <button onClick={save} disabled={saving} className="w-full mt-3 rounded-xl py-2.5 font-bold text-white" style={{ background: T.navy, opacity: saving ? 0.6 : 1 }}>
+          {saving ? "…" : saved ? "✓ Enregistré" : "Enregistrer"}
+        </button>
+      </div>
+
+      <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="w-full flex items-center justify-between rounded-2xl p-3.5 mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center gap-2.5">
+          <Icon name={theme === "dark" ? "moon" : "sun"} size={17} color={T.navy} />
+          <span className="text-sm font-semibold" style={{ color: T.ink }}>Mode sombre</span>
+        </div>
+        <div style={{ width: 40, height: 22, borderRadius: 999, background: theme === "dark" ? T.navy : T.line, position: "relative", flexShrink: 0 }}>
+          <div style={{ width: 18, height: 18, borderRadius: 999, background: "#fff", position: "absolute", top: 2, left: theme === "dark" ? 20 : 2, transition: "left 0.15s ease" }} />
+        </div>
+      </button>
+
+      <button onClick={() => supabase.auth.signOut()} className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold" style={{ border: `1.5px solid #B3261E`, color: "#B3261E" }}>
+        <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
+      </button>
+    </ProfileSubScreen>
+  );
+}
+
+function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOpenOnboarding }) {
   const [myProviders, setMyProviders] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [requests, setRequests] = useState(null);
   const [reviews, setReviews] = useState(null);
   const [tab, setTab] = useState("home"); // home | requests | avis
   const [editing, setEditing] = useState(false);
-  const [extras, setExtras] = useState(false);
+  const [extras, setExtras] = useState(null); // null | "services" | "photos"
   const [preview, setPreview] = useState(false);
+  const [statsView, setStatsView] = useState(false);
+  const [notifView, setNotifView] = useState(false);
+  const [settingsView, setSettingsView] = useState(false);
 
   const load = async () => {
     const all = await api.fetchProviders();
@@ -2433,6 +2636,7 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
   const fields = [provider.name, provider.category_id, provider.zone, provider.phone, provider.description, provider.price_text, provider.photo_url];
   const filled = fields.filter(Boolean).length;
   const completion = Math.round((filled / fields.length) * 100);
+  const avgRating = myRevs.length ? (myRevs.reduce((s, r) => s + r.rating, 0) / myRevs.length).toFixed(1) : provider.rating;
 
   if (editing) {
     return (
@@ -2443,27 +2647,36 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
   }
   if (extras) {
     return (
-      <ProfileSubScreen title="Services & photos" onBack={() => { setExtras(false); load(); }}>
-        <ProviderExtrasManager provider={provider} onClose={() => { setExtras(false); load(); }} />
+      <ProfileSubScreen title={extras === "photos" ? "Mes photos" : "Mes services"} onBack={() => { setExtras(null); load(); }}>
+        <ProviderExtrasManager provider={provider} initialTab={extras} onClose={() => { setExtras(null); load(); }} />
       </ProfileSubScreen>
     );
   }
   if (preview) {
     return <ProviderSheet provider={provider} categories={categories} session={session} onBack={() => setPreview(false)} />;
   }
+  if (statsView) {
+    return <ProviderStatsScreen provider={provider} requestsCount={myReqs.length} reviewsCount={myRevs.length} avgRating={avgRating} onBack={() => setStatsView(false)} />;
+  }
+  if (notifView) {
+    return (
+      <ProviderNotificationsScreen
+        items={(requests || []).filter((r) => r.provider_id === provider.id).map((r) => ({ id: "req-" + r.id, time: r.created_at, text: `Nouvelle demande de ${r.profiles?.full_name || "un client"}.` }))}
+        onBack={() => setNotifView(false)}
+      />
+    );
+  }
+  if (settingsView) {
+    return <ProviderSettingsScreen session={session} theme={theme} setTheme={setTheme} onBack={() => setSettingsView(false)} />;
+  }
   if (tab === "requests") {
     return <RequestsList requests={myReqs} session={session} isProvider onBack={() => setTab("home")} title="Demandes reçues" />;
   }
   if (tab === "avis") {
-    return (
-      <ProfileSubScreen title="Avis clients" onBack={() => setTab("home")}>
-        <ReviewsSection provider={provider} session={session} />
-      </ProfileSubScreen>
-    );
+    return <ProviderAvisScreen provider={provider} session={session} onBack={() => setTab("home")} onChanged={load} />;
   }
 
   const name = "Prestataire";
-  const avgRating = myRevs.length ? (myRevs.reduce((s, r) => s + r.rating, 0) / myRevs.length).toFixed(1) : provider.rating;
 
   return (
     <div className="h-full flex flex-col" style={{ background: T.bg }}>
@@ -2505,7 +2718,7 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
           </button>
         </div>
 
-        {!provider.validated && (
+        {!provider.validated ? (
           <div className="flex items-center gap-3 rounded-2xl p-3 mt-3" style={{ background: "#FDF3E3" }}>
             <Icon name="clock" size={20} color="#B7791F" />
             <div>
@@ -2513,7 +2726,19 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
               <div className="text-[11px]" style={{ color: "#8A5A00" }}>Notre équipe vérifiera vos informations avant la publication.</div>
             </div>
           </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-2xl p-3 mt-3" style={{ background: "#EAF7EF" }}>
+            <Icon name="checkCircle" size={20} color={T.greenDeep} filled />
+            <div>
+              <div className="text-xs font-bold" style={{ color: T.greenDeep }}>Prestataire vérifié</div>
+              <div className="text-[11px]" style={{ color: T.greenDeep }}>Votre fiche est publiée et visible dans l'annuaire.</div>
+            </div>
+          </div>
         )}
+
+        <button onClick={() => setPreview(true)} className="flex items-center gap-1.5 mt-3 text-xs font-semibold" style={{ color: T.blue }}>
+          <Icon name="eye" size={13} color={T.blue} /> Voir mon profil public
+        </button>
 
         <div className="grid grid-cols-4 gap-2 mt-4">
           <div className="rounded-2xl p-2.5 text-center" style={{ background: "var(--card)", boxShadow: T.shadow }}>
@@ -2541,10 +2766,13 @@ function ProviderDashboard({ session, categories, onClose, onOpenOnboarding }) {
         <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>Gérer mon activité</div>
         <div className="grid grid-cols-2 gap-2.5">
           {[
-            ["eye", "Voir mon profil public", () => setPreview(true)],
             ["user", "Modifier mon activité", () => setEditing(true)],
-            ["wrench", "Mes services & photos", () => setExtras(true)],
+            ["wrench", "Mes services", () => setExtras("services")],
+            ["camera", "Mes photos", () => setExtras("photos")],
             ["star", "Avis clients", () => setTab("avis")],
+            ["chart", "Statistiques", () => setStatsView(true)],
+            ["bell", "Notifications", () => setNotifView(true)],
+            ["settings", "Paramètres", () => setSettingsView(true)],
           ].map(([icon, label, fn]) => (
             <button key={label} onClick={fn} className="rounded-2xl p-3 text-left" style={{ background: "var(--card)", boxShadow: T.shadow }}>
               <div className="rounded-full flex items-center justify-center mb-2" style={{ width: 36, height: 36, background: T.bg }}>
@@ -3428,7 +3656,7 @@ function App() {
         {!loaded ? (
           <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
         ) : showDashboard ? (
-          <ProviderDashboard session={session} categories={categories}
+          <ProviderDashboard session={session} categories={categories} theme={theme} setTheme={setTheme}
             onClose={() => setShowDashboard(false)}
             onOpenOnboarding={() => { setShowDashboard(false); setShowOnboarding(true); }} />
         ) : showOnboarding ? (
