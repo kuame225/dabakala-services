@@ -116,6 +116,69 @@
   .dabakala-screen {
     animation: dabakala-screen-in 0.22s ease-out;
   }
+
+  /* ===== Adaptation desktop (≥1024px) ===== */
+  @media (min-width: 1024px) {
+    /* L'app s'élargit au lieu de rester en colonne étroite centrée */
+    .dabakala-app-shell {
+      max-width: 1280px !important;
+      height: 100vh !important;
+      box-shadow: 0 0 40px rgba(0,0,0,0.06);
+    }
+
+    /* Contenu + navigation en rangée plutôt qu'empilés (sidebar à gauche) */
+    .dabakala-content-row {
+      flex-direction: row-reverse !important;
+      align-items: stretch !important;
+      height: 100%;
+    }
+    .dabakala-content-row > .dabakala-screen {
+      height: 100%;
+      min-height: 0;
+    }
+
+    /* La navigation du bas devient une barre latérale */
+    .dabakala-bottomnav {
+      flex-direction: column !important;
+      width: 240px;
+      flex-shrink: 0;
+      border-top: none !important;
+      border-right: 1px solid var(--line);
+      padding: 16px 0;
+      height: 100%;
+      overflow-y: auto;
+      align-items: stretch;
+    }
+    .dabakala-bottomnav > button {
+      flex: none !important;
+      flex-direction: row !important;
+      justify-content: flex-start !important;
+      gap: 14px;
+      padding: 13px 24px !important;
+      border-radius: 0 999px 999px 0;
+      font-size: 14px !important;
+    }
+    .dabakala-bottomnav > button span {
+      font-size: 14px !important;
+    }
+
+    /* Grilles multi-colonnes pour mieux exploiter la largeur */
+    .dabakala-grid-cards {
+      display: grid !important;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .dabakala-grid-cards > * {
+      width: auto !important;
+      margin-top: 0 !important;
+    }
+    .dabakala-cat-grid {
+      grid-template-columns: repeat(6, 1fr) !important;
+    }
+    .dabakala-actions-grid {
+      grid-template-columns: repeat(4, 1fr) !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1599,7 +1662,7 @@ function UserHome({ providers, categories, session, onOpen, userTab, onNavigate,
                 {showAllCats ? "Réduire" : "Voir tout"}
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-3 gap-2.5 dabakala-cat-grid">
               {(showAllCats ? categories : categories.slice(0, 6)).map((c) => (
                 <CategoryTile key={c.id} cat={c} active={cat === c.id} onClick={() => { setCat(cat === c.id ? null : c.id); onNavigate && onNavigate("search"); }} />
               ))}
@@ -1636,7 +1699,7 @@ function UserHome({ providers, categories, session, onOpen, userTab, onNavigate,
             {nearby.length === 0 ? (
               <div className="text-sm" style={{ color: T.mute }}>Aucun prestataire validé pour l'instant.</div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3 dabakala-grid-cards">
                 {nearby.map((p) => <ProviderCard key={p.id} p={p} categories={categories} onOpen={onOpen} userLoc={userLoc} />)}
               </div>
             )}
@@ -1758,7 +1821,7 @@ function UserHome({ providers, categories, session, onOpen, userTab, onNavigate,
           </div>
         ) : (
           <div>
-            <div className="space-y-3">
+            <div className="space-y-3 dabakala-grid-cards">
               {visible.length === 0 && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Aucun prestataire validé pour ce filtre.</div>}
               {visible.map((p) => <ProviderCard key={p.id} p={p} categories={categories} onOpen={onOpen} userLoc={userLoc} />)}
             </div>
@@ -2767,6 +2830,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
           </>
         )}
       </div>
+      <div className="flex-1 min-h-0 flex flex-col dabakala-content-row">
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {myProviders.length > 1 && (
           <div className="flex gap-2 overflow-x-auto mb-3" style={{ scrollbarWidth: "none" }}>
@@ -2843,7 +2907,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
         </div>
 
         <div className="text-xs font-bold uppercase tracking-wide mt-5 mb-1.5" style={{ color: T.mute }}>Gérer mon activité</div>
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5 dabakala-actions-grid">
           {[
             ["user", "Modifier mon activité", () => setEditing(true)],
             ["wrench", "Mes services", () => setExtras("services")],
@@ -2863,7 +2927,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
         </div>
       </div>
 
-      <div className="flex" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}` }}>
+      <div className="flex dabakala-bottomnav" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}` }}>
         {[["home", "home", "Accueil"], ["requests", "chat", "Demandes"], ["avis", "star", "Avis"]].map(([id, icon, label]) => (
           <button key={id} onClick={() => setTab(id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5" style={{ position: "relative" }}>
             <Icon name={icon} size={20} color={tab === id ? T.navy : T.mute} />
@@ -2877,6 +2941,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
           <Icon name="user" size={20} color={T.mute} />
           <span className="text-[10px] font-semibold" style={{ color: T.mute }}>Profil</span>
         </button>
+      </div>
       </div>
     </div>
   );
@@ -3686,7 +3751,7 @@ function App() {
   const showBottomNav = role === "user" && !openProvider && !showDashboard && !showOnboarding && !hasFiche;
 
   return (
-    <div className="flex flex-col w-full" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
+    <div className="flex flex-col w-full dabakala-app-shell" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
       <datalist id="dabakala-zones">
         {ZONES.map((z) => <option key={z} value={z} />)}
       </datalist>
@@ -3734,47 +3799,49 @@ function App() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 dabakala-screen" key={`${role}-${userTab}-${openProvider || ""}-${showOnboarding}-${showDashboard}`}>
-        {!loaded ? (
-          <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
-        ) : (showDashboard || hasFiche) ? (
-          <ProviderDashboard session={session} categories={categories} theme={theme} setTheme={setTheme}
-            role={role} setRole={setRole} onSignOut={() => supabase.auth.signOut()}
-            onClose={() => setShowDashboard(false)}
-            onOpenOnboarding={() => { setShowDashboard(false); setShowOnboarding(true); }} />
-        ) : showOnboarding ? (
-          <ProviderOnboarding session={session} categories={categories}
-            onClose={() => setShowOnboarding(false)}
-            onDone={() => { setShowOnboarding(false); refreshProviders(); }} />
-        ) : openProvider ? (
-          <ProviderSheet provider={providers.find((p) => p.id === openProvider) || openProvider} categories={categories} session={session} onBack={closeProvider} />
-        ) : role === "user" ? (
-          <UserHome providers={providers} categories={categories} session={session} onOpen={(p) => openProviderById(p.id)} userTab={userTab} onNavigate={setUserTab} onProposeService={() => setShowOnboarding(true)} theme={theme} setTheme={setTheme} />
-        ) : role === "agent" ? (
-          <AuthGate session={session} profile={profile} allow={["agent", "admin"]}>
-            <AgentHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} />
-          </AuthGate>
-        ) : (
-          <AuthGate session={session} profile={profile} allow={["admin"]}>
-            <AdminHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} onCategoriesChanged={refreshCategories} />
-          </AuthGate>
+      <div className="flex-1 min-h-0 flex flex-col dabakala-content-row">
+        <div className="flex-1 min-h-0 dabakala-screen" key={`${role}-${userTab}-${openProvider || ""}-${showOnboarding}-${showDashboard}`}>
+          {!loaded ? (
+            <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
+          ) : (showDashboard || hasFiche) ? (
+            <ProviderDashboard session={session} categories={categories} theme={theme} setTheme={setTheme}
+              role={role} setRole={setRole} onSignOut={() => supabase.auth.signOut()}
+              onClose={() => setShowDashboard(false)}
+              onOpenOnboarding={() => { setShowDashboard(false); setShowOnboarding(true); }} />
+          ) : showOnboarding ? (
+            <ProviderOnboarding session={session} categories={categories}
+              onClose={() => setShowOnboarding(false)}
+              onDone={() => { setShowOnboarding(false); refreshProviders(); }} />
+          ) : openProvider ? (
+            <ProviderSheet provider={providers.find((p) => p.id === openProvider) || openProvider} categories={categories} session={session} onBack={closeProvider} />
+          ) : role === "user" ? (
+            <UserHome providers={providers} categories={categories} session={session} onOpen={(p) => openProviderById(p.id)} userTab={userTab} onNavigate={setUserTab} onProposeService={() => setShowOnboarding(true)} theme={theme} setTheme={setTheme} />
+          ) : role === "agent" ? (
+            <AuthGate session={session} profile={profile} allow={["agent", "admin"]}>
+              <AgentHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} />
+            </AuthGate>
+          ) : (
+            <AuthGate session={session} profile={profile} allow={["admin"]}>
+              <AdminHome providers={providers} categories={categories} reviews={reviews} session={session} onChanged={refreshProviders} onCategoriesChanged={refreshCategories} />
+            </AuthGate>
+          )}
+        </div>
+
+        {/* Navigation en bas — écran Utilisateur uniquement (devient une barre latérale sur desktop) */}
+        {showBottomNav && !showOnboarding && (
+          <div className="flex dabakala-bottomnav" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+            {BOTTOM_TABS.map((t) => {
+              const active = userTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setUserTab(t.id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+                  <Icon name={t.icon} size={20} color={active ? T.navy : T.mute} filled={active && t.id === "favorites"} />
+                  <span className="text-[10px] font-semibold" style={{ color: active ? T.navy : T.mute }}>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      {/* Navigation en bas — écran Utilisateur uniquement */}
-      {showBottomNav && !showOnboarding && (
-        <div className="flex" style={{ background: "var(--card)", borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
-          {BOTTOM_TABS.map((t) => {
-            const active = userTab === t.id;
-            return (
-              <button key={t.id} onClick={() => setUserTab(t.id)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
-                <Icon name={t.icon} size={20} color={active ? T.navy : T.mute} filled={active && t.id === "favorites"} />
-                <span className="text-[10px] font-semibold" style={{ color: active ? T.navy : T.mute }}>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
