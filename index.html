@@ -302,7 +302,12 @@ const api = {
     return error ? null : data;
   },
   async uploadPhoto(file) {
-    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+    const dotIdx = file.name.lastIndexOf(".");
+    const ext = (dotIdx >= 0 ? file.name.slice(dotIdx + 1) : "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    const base = (dotIdx >= 0 ? file.name.slice(0, dotIdx) : file.name)
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // retire les accents
+      .replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "photo";
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${base}.${ext}`;
     const { error } = await supabase.storage.from("provider-photos").upload(path, file);
     if (error) throw error;
     const { data } = supabase.storage.from("provider-photos").getPublicUrl(path);
