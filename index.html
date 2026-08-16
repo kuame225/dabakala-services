@@ -387,8 +387,11 @@ const api = {
     const { data, error } = await supabase.from("provider_photos").select("*").eq("provider_id", providerId).order("sort_order");
     return error ? [] : data;
   },
-  async addGalleryPhoto(providerId, photoUrl, sortOrder) {
-    return supabase.from("provider_photos").insert({ provider_id: providerId, photo_url: photoUrl, sort_order: sortOrder });
+  async addGalleryPhoto(providerId, photoUrl, sortOrder, serviceId) {
+    return supabase.from("provider_photos").insert({ provider_id: providerId, photo_url: photoUrl, sort_order: sortOrder, service_id: serviceId || null });
+  },
+  async setPhotoService(photoId, serviceId) {
+    return supabase.from("provider_photos").update({ service_id: serviceId }).eq("id", photoId);
   },
   async deleteGalleryPhoto(id) {
     return supabase.from("provider_photos").delete().eq("id", id);
@@ -928,7 +931,11 @@ function FavoritesView({ session, categories, onOpen }) {
 
 function ServicesTab({ provider }) {
   const [services, setServices] = useState(null);
-  useEffect(() => { api.fetchServices(provider.id).then(setServices); }, [provider.id]);
+  const [photos, setPhotos] = useState([]);
+  useEffect(() => {
+    api.fetchServices(provider.id).then(setServices);
+    api.fetchGalleryPhotos(provider.id).then(setPhotos);
+  }, [provider.id]);
 
   if (services === null) return (
     <div className="flex gap-2.5 overflow-x-auto">
@@ -939,13 +946,24 @@ function ServicesTab({ provider }) {
 
   return (
     <div className="flex gap-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      {services.map((s) => (
-        <div key={s.id} className="flex flex-col items-center justify-center rounded-2xl text-center" style={{ background: "var(--card)", boxShadow: T.shadow, minWidth: 84, padding: "12px 8px", flexShrink: 0 }}>
-          <Icon name={iconForCategory(provider.category_id)} size={22} color={T.orange} strokeWidth={1.8} />
-          <span className="text-[11px] font-semibold mt-1 leading-tight" style={{ color: T.ink }}>{s.name}</span>
-          {s.price_text && <span className="text-[10px] mt-0.5" style={{ color: T.orange, fontWeight: 700 }}>{s.price_text}</span>}
-        </div>
-      ))}
+      {services.map((s) => {
+        const photo = photos.find((p) => p.service_id === s.id);
+        return (
+          <div key={s.id} className="flex flex-col items-center justify-center rounded-2xl text-center overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow, minWidth: 84, flexShrink: 0 }}>
+            {photo ? (
+              <img src={photo.photo_url} alt="" style={{ width: "100%", height: 60, objectFit: "cover" }} />
+            ) : (
+              <div className="flex items-center justify-center" style={{ width: "100%", height: 60, paddingTop: 12 }}>
+                <Icon name={iconForCategory(provider.category_id)} size={22} color={T.orange} strokeWidth={1.8} />
+              </div>
+            )}
+            <div style={{ padding: "6px 8px 10px" }}>
+              <span className="text-[11px] font-semibold leading-tight" style={{ color: T.ink }}>{s.name}</span>
+              {s.price_text && <div className="text-[10px] mt-0.5" style={{ color: T.orange, fontWeight: 700 }}>{s.price_text}</div>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1762,6 +1780,7 @@ function ProviderExtrasManager({ provider, onClose, initialTab }) {
   const [newName, setNewName] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [photoFile, setPhotoFile] = useState(null);
+  const [servicePhotoBusy, setServicePhotoBusy] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -1780,6 +1799,18 @@ function ProviderExtrasManager({ provider, onClose, initialTab }) {
     setNewName(""); setNewPrice(""); load();
   };
   const removeService = async (id) => { await api.deleteService(id); load(); };
+
+  const addServicePhoto = async (serviceId, file) => {
+    if (!file) return;
+    setServicePhotoBusy(serviceId); setErr("");
+    try {
+      const url = await api.uploadPhoto(file);
+      const { error } = await api.addGalleryPhoto(provider.id, url, photos.length, serviceId);
+      if (error) throw error;
+      load();
+    } catch (e) { setErr(e.message || "Erreur"); }
+    setServicePhotoBusy(null);
+  };
 
   const addPhoto = async () => {
     if (!photoFile) return;
@@ -1809,12 +1840,31 @@ function ProviderExtrasManager({ provider, onClose, initialTab }) {
 
       {tab === "services" ? (
         <div className="space-y-2">
-          {services.map((s) => (
-            <div key={s.id} className="flex items-center justify-between rounded-lg px-2.5 py-1.5" style={{ background: T.cream }}>
-              <span className="text-xs" style={{ color: T.ink }}>{s.name} {s.price_text && <span style={{ color: T.mute }}>· {s.price_text}</span>}</span>
-              <button onClick={() => removeService(s.id)} className="text-[10px] font-semibold" style={{ color: "#B3261E" }}>Suppr.</button>
-            </div>
-          ))}
+          {services.map((s) => {
+            const photo = photos.find((p) => p.service_id === s.id);
+            return (
+              <div key={s.id} className="rounded-lg p-2" style={{ background: T.cream }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: T.ink }}>{s.name} {s.price_text && <span style={{ color: T.mute }}>· {s.price_text}</span>}</span>
+                  <button onClick={() => removeService(s.id)} className="text-[10px] font-semibold" style={{ color: "#B3261E" }}>Suppr.</button>
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  {photo ? (
+                    <div className="relative" style={{ width: 44, height: 44 }}>
+                      <img src={photo.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }} />
+                      <button onClick={() => removePhoto(photo.id)} className="absolute -top-1 -right-1 rounded-full text-[8px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 14, height: 14, lineHeight: "14px" }}>✕</button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center rounded-lg text-[9px] font-semibold text-center px-2 py-1.5" style={{ width: 44, height: 44, background: "var(--card)", border: `1px dashed ${T.line}`, color: T.mute, cursor: "pointer" }}>
+                      {servicePhotoBusy === s.id ? "…" : "+ photo"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => addServicePhoto(s.id, e.target.files[0])} />
+                    </label>
+                  )}
+                  <span className="text-[10px]" style={{ color: T.mute }}>Photo affichée avec ce service sur la fiche publique</span>
+                </div>
+              </div>
+            );
+          })}
           <div className="flex gap-1.5">
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom du service" className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
             <input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="Prix" className="w-20 rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.cream, border: `1px solid ${T.line}` }} />
@@ -1824,12 +1874,18 @@ function ProviderExtrasManager({ provider, onClose, initialTab }) {
       ) : (
         <div className="space-y-2">
           <div className="grid grid-cols-4 gap-1.5">
-            {photos.map((p) => (
-              <div key={p.id} className="relative" style={{ aspectRatio: "1/1" }}>
-                <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }} />
-                <button onClick={() => removePhoto(p.id)} className="absolute top-0.5 right-0.5 rounded-full text-[9px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 16, height: 16, lineHeight: "16px" }}>✕</button>
-              </div>
-            ))}
+            {photos.map((p) => {
+              const linkedService = services.find((s) => s.id === p.service_id);
+              return (
+                <div key={p.id} className="relative" style={{ aspectRatio: "1/1" }}>
+                  <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }} />
+                  <button onClick={() => removePhoto(p.id)} className="absolute top-0.5 right-0.5 rounded-full text-[9px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 16, height: 16, lineHeight: "16px" }}>✕</button>
+                  {linkedService && (
+                    <span className="absolute bottom-0 left-0 right-0 text-[8px] font-semibold text-center truncate px-0.5" style={{ background: "rgba(0,0,0,0.55)", color: "#fff", borderRadius: "0 0 6px 6px" }}>{linkedService.name}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files[0] || null)} className="w-full text-[11px]" />
           <button onClick={addPhoto} disabled={busy || !photoFile} className="w-full rounded-lg py-1.5 text-xs font-semibold text-white" style={{ background: T.navy, opacity: photoFile ? 1 : 0.5 }}>
