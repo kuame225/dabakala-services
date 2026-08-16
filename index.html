@@ -1210,7 +1210,7 @@ function RequestThread({ request, session, isProvider, onBack, onTreated }) {
   const [busy, setBusy] = useState(false);
 
   const load = () => api.fetchRequestMessages(request.id).then(setMessages);
-  useEffect(load, [request.id]);
+  useEffect(() => { load(); }, [request.id]);
 
   const send = async () => {
     if (!body.trim()) return;
@@ -1313,7 +1313,7 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
     api.fetchMyReviews(session.user.id).then(setMyReviews);
     api.fetchMyRequests(session.user.id).then(setMyRequests);
   };
-  useEffect(load, [session]);
+  useEffect(() => { load(); }, [session]);
 
   if (!session) {
     return (
@@ -2403,7 +2403,7 @@ function ProviderAvisScreen({ provider, session, onBack, onChanged }) {
   const [busy, setBusy] = useState(false);
 
   const load = () => api.fetchReviews(provider.id).then(setReviews);
-  useEffect(load, [provider.id]);
+  useEffect(() => { load(); }, [provider.id]);
 
   const visible = filter ? (reviews || []).filter((r) => r.rating === filter) : (reviews || []);
   const avg = reviews && reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : "—";
@@ -2581,7 +2581,8 @@ function ProviderSettingsScreen({ session, theme, setTheme, onBack }) {
   );
 }
 
-function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOpenOnboarding }) {
+function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOpenOnboarding, role, setRole, onSignOut }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [myProviders, setMyProviders] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [requests, setRequests] = useState(null);
@@ -2680,13 +2681,30 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
 
   return (
     <div className="h-full flex flex-col" style={{ background: T.bg }}>
-      <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
-        <button onClick={onClose} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
+      <div className="relative flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={() => setMenuOpen((v) => !v)} style={{ color: T.ink }}><Icon name="menu" size={22} /></button>
         <span className="font-bold text-sm flex-1" style={{ color: T.ink }}>Tableau de bord prestataire</span>
         <NotificationBell
           items={(requests || []).map((r) => ({ id: "req-" + r.id, time: r.created_at, text: `💬 Nouvelle demande de ${r.profiles?.full_name || "un client"} sur « ${r.providers ? r.providers.name : ""} ».` }))}
           storageKey={`dabakala:notif:provider:${session.user.id}`}
         />
+        {menuOpen && (
+          <>
+            <div onClick={() => setMenuOpen(false)} className="fixed inset-0" style={{ zIndex: 60, background: "rgba(0,0,0,0.15)" }} />
+            <div className="absolute left-4 top-14 rounded-2xl overflow-hidden" style={{ background: "var(--card)", boxShadow: "0 6px 24px rgba(0,0,0,0.18)", zIndex: 61, width: 220 }}>
+              {[{ id: "agent", label: "Espace agent", icon: "wrench" }, { id: "admin", label: "Espace admin", icon: "shieldCheck" }].map((r) => (
+                <button key={r.id} onClick={() => { setRole && setRole(r.id); setMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left"
+                  style={{ background: role === r.id ? T.bg : "var(--card)", color: role === r.id ? T.navy : T.ink, borderBottom: `1px solid ${T.line}` }}>
+                  <Icon name={r.icon} size={16} color={role === r.id ? T.navy : T.mute} /> {r.label}
+                </button>
+              ))}
+              <button onClick={() => { setMenuOpen(false); onSignOut && onSignOut(); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left" style={{ color: "#B3261E" }}>
+                <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {myProviders.length > 1 && (
@@ -2794,7 +2812,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
             )}
           </button>
         ))}
-        <button onClick={onClose} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
+        <button onClick={() => setSettingsView(true)} className="flex-1 flex flex-col items-center gap-0.5 py-2.5">
           <Icon name="user" size={20} color={T.mute} />
           <span className="text-[10px] font-semibold" style={{ color: T.mute }}>Profil</span>
         </button>
@@ -3405,6 +3423,7 @@ function App() {
   const [reviews, setReviews] = useState([]);
   const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [openProvider, setOpenProvider] = useState(null);
+
   const openProviderById = (id) => {
     setOpenProvider(id);
     const url = new URL(window.location.href);
@@ -3420,6 +3439,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const hasFiche = !!(session && providers.some((p) => p.added_by === session.user.id));
 
   const refreshProviders = async () => setProviders(await api.fetchProviders());
   const refreshCategories = async () => setCategories(await api.fetchCategories());
@@ -3601,7 +3621,7 @@ function App() {
     { id: "profile", label: "Profil", icon: "user" },
   ];
 
-  const showBottomNav = role === "user" && !openProvider && !showDashboard && !showOnboarding;
+  const showBottomNav = role === "user" && !openProvider && !showDashboard && !showOnboarding && !hasFiche;
 
   return (
     <div className="flex flex-col w-full" style={{ height: "100dvh", background: T.cream, maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
@@ -3610,7 +3630,7 @@ function App() {
       </datalist>
 
       {/* Barre du haut : menu hamburger + profil */}
-      {!openProvider && !showDashboard && !showOnboarding && (
+      {!openProvider && !showDashboard && !showOnboarding && !hasFiche && (
         <div className="relative flex items-center justify-between px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={() => setMenuOpen((v) => !v)} style={{ color: T.ink }}><Icon name="menu" size={22} /></button>
           <button onClick={() => { setRole("user"); setUserTab("profile"); setShowDashboard(false); }} className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: T.bg, border: `1px solid ${T.line}`, color: T.navy }}>
@@ -3655,8 +3675,9 @@ function App() {
       <div className="flex-1 min-h-0 dabakala-screen" key={`${role}-${userTab}-${openProvider || ""}-${showOnboarding}-${showDashboard}`}>
         {!loaded ? (
           <div className="h-full flex items-center justify-center text-sm" style={{ color: T.mute }}>Chargement…</div>
-        ) : showDashboard ? (
+        ) : (showDashboard || hasFiche) ? (
           <ProviderDashboard session={session} categories={categories} theme={theme} setTheme={setTheme}
+            role={role} setRole={setRole} onSignOut={() => supabase.auth.signOut()}
             onClose={() => setShowDashboard(false)}
             onOpenOnboarding={() => { setShowDashboard(false); setShowOnboarding(true); }} />
         ) : showOnboarding ? (
