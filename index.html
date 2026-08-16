@@ -945,21 +945,21 @@ function ServicesTab({ provider }) {
   if (services.length === 0) return <div className="text-xs" style={{ color: T.mute }}>Aucun service détaillé pour l'instant — voir le tarif indicatif ci-dessus.</div>;
 
   return (
-    <div className="flex gap-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+    <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
       {services.map((s) => {
         const photo = photos.find((p) => p.service_id === s.id);
         return (
-          <div key={s.id} className="flex flex-col items-center justify-center rounded-2xl text-center overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow, minWidth: 84, flexShrink: 0 }}>
+          <div key={s.id} className="flex flex-col items-center justify-center rounded-2xl text-center overflow-hidden" style={{ background: "var(--card)", boxShadow: T.shadow, minWidth: 130, flexShrink: 0 }}>
             {photo ? (
-              <img src={photo.photo_url} alt="" style={{ width: "100%", height: 60, objectFit: "cover" }} />
+              <img src={photo.photo_url} alt="" style={{ width: "100%", height: 130, objectFit: "cover" }} />
             ) : (
-              <div className="flex items-center justify-center" style={{ width: "100%", height: 60, paddingTop: 12 }}>
-                <Icon name={iconForCategory(provider.category_id)} size={22} color={T.orange} strokeWidth={1.8} />
+              <div className="flex items-center justify-center" style={{ width: "100%", height: 130, paddingTop: 12 }}>
+                <Icon name={iconForCategory(provider.category_id)} size={30} color={T.orange} strokeWidth={1.8} />
               </div>
             )}
-            <div style={{ padding: "6px 8px 10px" }}>
-              <span className="text-[11px] font-semibold leading-tight" style={{ color: T.ink }}>{s.name}</span>
-              {s.price_text && <div className="text-[10px] mt-0.5" style={{ color: T.orange, fontWeight: 700 }}>{s.price_text}</div>}
+            <div style={{ padding: "8px 10px 12px" }}>
+              <span className="text-[12px] font-semibold leading-tight" style={{ color: T.ink }}>{s.name}</span>
+              {s.price_text && <div className="text-[11px] mt-0.5" style={{ color: T.orange, fontWeight: 700 }}>{s.price_text}</div>}
             </div>
           </div>
         );
@@ -1850,12 +1850,12 @@ function ProviderExtrasManager({ provider, onClose, initialTab }) {
                 </div>
                 <div className="flex items-center gap-2 mt-1.5">
                   {photo ? (
-                    <div className="relative" style={{ width: 44, height: 44 }}>
-                      <img src={photo.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }} />
-                      <button onClick={() => removePhoto(photo.id)} className="absolute -top-1 -right-1 rounded-full text-[8px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 14, height: 14, lineHeight: "14px" }}>✕</button>
+                    <div className="relative" style={{ width: 84, height: 84 }}>
+                      <img src={photo.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} />
+                      <button onClick={() => removePhoto(photo.id)} className="absolute -top-1.5 -right-1.5 rounded-full text-[9px] font-bold" style={{ background: "#B3261E", color: "#fff", width: 18, height: 18, lineHeight: "18px" }}>✕</button>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center rounded-lg text-[9px] font-semibold text-center px-2 py-1.5" style={{ width: 44, height: 44, background: "var(--card)", border: `1px dashed ${T.line}`, color: T.mute, cursor: "pointer" }}>
+                    <label className="flex items-center justify-center rounded-lg text-[10px] font-semibold text-center px-2 py-1.5" style={{ width: 84, height: 84, background: "var(--card)", border: `1px dashed ${T.line}`, color: T.mute, cursor: "pointer" }}>
                       {servicePhotoBusy === s.id ? "…" : "+ photo"}
                       <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => addServicePhoto(s.id, e.target.files[0])} />
                     </label>
@@ -3525,6 +3525,7 @@ function App() {
       setProfile(sess ? await api.getProfile(sess.user.id) : null);
       refreshProviders();
       if (sess) refreshReviews();
+      if (!sess) { setShowDashboard(false); setShowOnboarding(false); setShowProviderLanding(false); }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
