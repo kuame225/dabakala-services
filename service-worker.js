@@ -1,4 +1,4 @@
-const CACHE = "dabakala-1786985231550";
+const CACHE = "dabakala-1787008422945";
 const ASSETS = ["./manifest.json", "./icon-192.png", "./icon-512.png", "./banner-hero.jpg"].concat(["./app.RGCAXCYP.js","./app.5MQKNDBK.css"]);
 
 self.addEventListener("install", (event) => {
