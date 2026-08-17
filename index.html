@@ -178,6 +178,21 @@
     .dabakala-actions-grid {
       grid-template-columns: repeat(4, 1fr) !important;
     }
+    .dabakala-admin-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      align-content: start;
+    }
+    .dabakala-admin-grid > * {
+      margin-top: 0 !important;
+    }
+    .dabakala-narrow-form {
+      max-width: 640px !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      width: 100%;
+    }
   }
 </style>
 </head>
@@ -401,6 +416,11 @@ const api = {
   },
   async incrementViews(providerId) {
     return supabase.rpc("increment_provider_views", { p_provider_id: providerId });
+  },
+  async fetchViewsTrend(providerId, days) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase.from("provider_view_events").select("created_at").eq("provider_id", providerId).gte("created_at", since);
+    return error ? [] : data;
   },
   async sendRequest(providerId, clientId, message) {
     return supabase.from("requests").insert({ provider_id: providerId, client_id: clientId, message });
@@ -1473,7 +1493,7 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
   const [myProviders, setMyProviders] = useState([]);
   const [myReviews, setMyReviews] = useState(null);
   const [myRequests, setMyRequests] = useState(null);
-  const [subView, setSubView] = useState(null); // null | "avis" | "infos" | "apropos" | "demandes"
+  const [subView, setSubView] = useState(null); // null | "avis" | "infos" | "apropos" | "demandes" | "cgu" | "privacy"
   const [nameInput, setNameInput] = useState("");
   const [savingName, setSavingName] = useState(false);
 
@@ -1560,6 +1580,10 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
     );
   }
 
+  if (subView === "cgu" || subView === "privacy") {
+    return <LegalScreen type={subView} onBack={() => setSubView("apropos")} />;
+  }
+
   if (subView === "apropos") {
     return (
       <ProfileSubScreen title="À propos" onBack={() => setSubView(null)}>
@@ -1569,6 +1593,12 @@ function ProfileTab({ session, onProposeService, theme, setTheme, onNavigate }) 
           <p className="text-sm leading-relaxed" style={{ color: T.ink }}>
             Le rendez-vous des services de confiance à Dabakala. Une plateforme locale qui connecte les habitants aux prestataires de la ville — plomberie, beauté, transport, informatique et bien plus.
           </p>
+        </div>
+        <div className="rounded-2xl overflow-hidden mt-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+          <ProfileRow icon="shieldCheck" title="Conditions d'utilisation" onClick={() => setSubView("cgu")} />
+          <div style={{ borderBottom: "none" }}>
+            <ProfileRow icon="shieldCheck" title="Politique de confidentialité" onClick={() => setSubView("privacy")} />
+          </div>
         </div>
       </ProfileSubScreen>
     );
@@ -2261,6 +2291,71 @@ function ProviderLandingScreen({ onBack, onStart, onLogin }) {
   );
 }
 
+const LEGAL_TEXTS = {
+  cgu: {
+    title: "Conditions d'utilisation",
+    body: `Dernière mise à jour : août 2026
+
+1. Objet
+Dabakala Services est une plateforme locale qui met en relation les habitants de Dabakala et les prestataires de services de la ville (artisans, commerçants, professionnels indépendants). Elle facilite la prise de contact ; elle n'est ni partie prenante ni garante des prestations réalisées entre un client et un prestataire.
+
+2. Inscription
+La recherche et la consultation des fiches sont libres, sans compte. La création d'un compte (email ou Google) est nécessaire pour laisser un avis, ajouter un favori, envoyer une demande à un prestataire, ou inscrire sa propre activité.
+
+3. Fiches prestataires
+Toute personne peut inscrire gratuitement son activité. Chaque fiche est examinée par l'équipe Dabakala Services avant publication. Le badge « Vérifié terrain » atteste uniquement qu'un agent s'est rendu sur place ; il ne constitue pas une garantie de qualité du service rendu.
+
+4. Avis
+Les avis doivent refléter une expérience réelle avec le prestataire concerné. Un avis peut être modifié par son auteur dans les 24h suivant sa publication. Un prestataire peut répondre publiquement à un avis, ou le signaler à l'administration s'il l'estime abusif ou mensonger. L'administration se réserve le droit de retirer tout avis contraire à ces règles.
+
+5. Responsabilité
+Dabakala Services n'intervient pas dans la négociation, l'exécution ou le paiement des prestations. Tout litige entre un client et un prestataire doit être réglé directement entre les parties.
+
+6. Modification
+Ces conditions peuvent évoluer. La poursuite de l'utilisation de la plateforme après une mise à jour vaut acceptation des nouvelles conditions.
+
+7. Contact
+Pour toute question, contactez l'équipe Dabakala Services via l'application.`,
+  },
+  privacy: {
+    title: "Politique de confidentialité",
+    body: `Dernière mise à jour : août 2026
+
+1. Données collectées
+Lors de la création d'un compte : nom complet, email, et pour les prestataires, numéro de téléphone/WhatsApp, zone d'intervention, description de l'activité, et photos éventuelles. Ces informations de fiche prestataire sont publiques par nature (elles servent à être trouvé par les clients).
+
+2. Utilisation des données
+Vos données servent uniquement au fonctionnement de la plateforme : afficher votre fiche, gérer vos avis et favoris, transmettre les demandes de contact, et vous permettre de vous connecter à votre compte.
+
+3. Partage des données
+Vos informations ne sont jamais vendues à des tiers. Les seules informations visibles publiquement sont celles de votre fiche si vous êtes prestataire (nom d'activité, zone, téléphone, avis reçus). Votre email et votre mot de passe ne sont jamais affichés.
+
+4. Conservation
+Vos données sont conservées tant que votre compte existe. Vous pouvez demander la suppression de votre compte et de vos données à tout moment en contactant l'administration.
+
+5. Sécurité
+L'authentification et le stockage des données sont assurés par Supabase, avec des règles d'accès strictes empêchant un utilisateur d'accéder aux données d'un autre.
+
+6. Vos droits
+Vous pouvez à tout moment demander l'accès, la correction ou la suppression de vos données personnelles en contactant l'équipe Dabakala Services.`,
+  },
+};
+
+function LegalScreen({ type, onBack }) {
+  const text = LEGAL_TEXTS[type];
+  return (
+    <div className="h-full flex flex-col" style={{ background: T.bg }}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ background: "var(--card)", borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={onBack} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
+        <span className="font-bold text-sm" style={{ color: T.ink }}>{text.title}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: T.ink }}>{text.body}</p>
+      </div>
+    </div>
+  );
+}
+
 function ProviderSignupForm({ categories, onDone }) {
   const [step, setStep] = useState("form"); // form | pendingConfirm
   const [fullName, setFullName] = useState("");
@@ -2278,6 +2373,7 @@ function ProviderSignupForm({ categories, onDone }) {
   const [urgence, setUrgence] = useState(false);
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [galleryPhotos, setGalleryPhotos] = useState([]);
+  const [legalView, setLegalView] = useState(null); // null | "cgu" | "privacy"
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -2346,6 +2442,10 @@ function ProviderSignupForm({ categories, onDone }) {
         <p className="text-sm" style={{ color: T.mute }}>Vérifie ta boîte mail ({email}) et clique sur le lien de confirmation, puis reconnecte-toi pour finaliser l'inscription de ton activité.</p>
       </div>
     );
+  }
+
+  if (legalView) {
+    return <LegalScreen type={legalView} onBack={() => setLegalView(null)} />;
   }
 
   return (
@@ -2430,6 +2530,12 @@ function ProviderSignupForm({ categories, onDone }) {
       <div className="rounded-xl px-3 py-2.5 text-[11px] font-medium mb-3" style={{ background: "#EAF0FB", color: T.navy }}>
         Votre profil sera vérifié par notre équipe avant d'être publié sur Dabakala Services.
       </div>
+      <p className="text-[10.5px] text-center mb-3" style={{ color: T.mute }}>
+        En créant votre compte, vous acceptez nos{" "}
+        <button onClick={() => setLegalView("cgu")} className="font-semibold underline" style={{ color: T.blue }}>Conditions d'utilisation</button>{" "}
+        et notre{" "}
+        <button onClick={() => setLegalView("privacy")} className="font-semibold underline" style={{ color: T.blue }}>Politique de confidentialité</button>.
+      </p>
       {err && <div className="text-xs font-semibold mb-2" style={{ color: T.orange }}>{err}</div>}
       <button onClick={submit} disabled={busy} className="w-full rounded-xl py-3 font-bold text-white" style={{ background: T.orange, opacity: busy ? 0.6 : 1 }}>
         {busy ? "Création en cours…" : "Créer mon profil gratuitement"}
@@ -2546,7 +2652,7 @@ function ProviderOnboarding({ session, categories, onClose, onDone }) {
         <button onClick={onClose} style={{ color: T.ink }}><Icon name="chevronLeft" size={22} /></button>
         <span className="font-bold text-sm" style={{ color: T.ink }}>Inscrire mon activité</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 dabakala-narrow-form">
         {restoredDraft && (
           <div className="rounded-xl px-3 py-2.5 text-xs font-semibold flex items-center gap-2" style={{ background: "#EAF7EF", color: T.greenDeep }}>
             <Icon name="checkCircle" size={15} color={T.greenDeep} filled /> Tes informations précédentes ont été restaurées.
@@ -2700,7 +2806,48 @@ function ProviderAvisScreen({ provider, session, onBack, onChanged }) {
   );
 }
 
-function ProviderStatsScreen({ provider, requestsCount, reviewsCount, avgRating, onBack }) {
+function DailyBarChart({ counts, color, labelEvery }) {
+  // counts: tableau de { label, value } dans l'ordre chronologique
+  const max = Math.max(1, ...counts.map((c) => c.value));
+  return (
+    <div className="flex items-end gap-1" style={{ height: 90 }}>
+      {counts.map((c, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center justify-end" style={{ height: "100%" }}>
+          <div style={{ width: "100%", maxWidth: 18, height: `${Math.max(4, (c.value / max) * 70)}px`, background: c.value > 0 ? color : "var(--line)", borderRadius: "3px 3px 0 0" }} />
+          {i % labelEvery === 0 && <span className="text-[8px] mt-1" style={{ color: T.mute }}>{c.label}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildDailyCounts(dates, days) {
+  const now = new Date();
+  const buckets = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    buckets.push({ key, label, value: 0 });
+  }
+  const byKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
+  dates.forEach((iso) => {
+    const key = iso.slice(0, 10);
+    if (byKey[key]) byKey[key].value += 1;
+  });
+  return buckets;
+}
+
+function ProviderStatsScreen({ provider, requestsCount, requests, reviewsCount, avgRating, onBack }) {
+  const [viewsRaw, setViewsRaw] = useState(null);
+  useEffect(() => { api.fetchViewsTrend(provider.id, 14).then((rows) => setViewsRaw(rows.map((r) => r.created_at))); }, [provider.id]);
+
+  const viewsDaily = viewsRaw ? buildDailyCounts(viewsRaw, 14) : null;
+  const requestsDaily = buildDailyCounts((requests || []).map((r) => r.created_at), 14);
+  const totalViews14d = viewsDaily ? viewsDaily.reduce((s, d) => s + d.value, 0) : 0;
+  const totalReq14d = requestsDaily.reduce((s, d) => s + d.value, 0);
+
   return (
     <ProfileSubScreen title="Statistiques" onBack={onBack}>
       <div className="space-y-2.5">
@@ -2721,8 +2868,25 @@ function ProviderStatsScreen({ provider, requestsCount, reviewsCount, avgRating,
           </div>
         ))}
       </div>
+
+      <div className="rounded-2xl p-4 mt-4" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-bold" style={{ color: T.ink }}>Vues sur 14 jours</span>
+          <span className="text-xs font-semibold" style={{ color: T.greenDeep }}>{totalViews14d} vue(s)</span>
+        </div>
+        {viewsDaily === null ? <Skeleton height={90} radius={8} /> : <DailyBarChart counts={viewsDaily} color={T.greenDeep} labelEvery={3} />}
+      </div>
+
+      <div className="rounded-2xl p-4 mt-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-bold" style={{ color: T.ink }}>Demandes sur 14 jours</span>
+          <span className="text-xs font-semibold" style={{ color: T.blue }}>{totalReq14d} demande(s)</span>
+        </div>
+        <DailyBarChart counts={requestsDaily} color={T.blue} labelEvery={3} />
+      </div>
+
       <p className="text-xs mt-4 text-center" style={{ color: T.mute }}>
-        Chiffres cumulés depuis la création de votre fiche. Un suivi de l'évolution jour par jour pourra être ajouté plus tard si utile.
+        Les 4 chiffres du haut sont cumulés depuis la création de votre fiche. Les courbes ci-dessus montrent l'évolution jour par jour sur les 2 dernières semaines.
       </p>
     </ProfileSubScreen>
   );
@@ -2751,6 +2915,7 @@ function ProviderSettingsScreen({ session, theme, setTheme, onBack }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [legalView, setLegalView] = useState(null); // null | "cgu" | "privacy"
 
   useEffect(() => { api.getProfile(session.user.id).then((p) => setName(p?.full_name || "")); }, [session]);
 
@@ -2761,6 +2926,10 @@ function ProviderSettingsScreen({ session, theme, setTheme, onBack }) {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  if (legalView) {
+    return <LegalScreen type={legalView} onBack={() => setLegalView(null)} />;
+  }
 
   return (
     <ProfileSubScreen title="Paramètres" onBack={onBack}>
@@ -2783,6 +2952,13 @@ function ProviderSettingsScreen({ session, theme, setTheme, onBack }) {
           <div style={{ width: 18, height: 18, borderRadius: 999, background: "#fff", position: "absolute", top: 2, left: theme === "dark" ? 20 : 2, transition: "left 0.15s ease" }} />
         </div>
       </button>
+
+      <div className="rounded-2xl overflow-hidden mb-3" style={{ background: "var(--card)", boxShadow: T.shadow }}>
+        <ProfileRow icon="shieldCheck" title="Conditions d'utilisation" onClick={() => setLegalView("cgu")} />
+        <div style={{ borderBottom: "none" }}>
+          <ProfileRow icon="shieldCheck" title="Politique de confidentialité" onClick={() => setLegalView("privacy")} />
+        </div>
+      </div>
 
       <button onClick={() => supabase.auth.signOut()} className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold" style={{ border: `1.5px solid #B3261E`, color: "#B3261E" }}>
         <Icon name="logout" size={16} color="#B3261E" /> Déconnexion
@@ -2867,7 +3043,7 @@ function ProviderDashboard({ session, categories, theme, setTheme, onClose, onOp
     return <ProviderSheet provider={provider} categories={categories} session={session} onBack={() => setPreview(false)} />;
   }
   if (statsView) {
-    return <ProviderStatsScreen provider={provider} requestsCount={myReqs.length} reviewsCount={myRevs.length} avgRating={avgRating} onBack={() => setStatsView(false)} />;
+    return <ProviderStatsScreen provider={provider} requestsCount={myReqs.length} requests={myReqs} reviewsCount={myRevs.length} avgRating={avgRating} onBack={() => setStatsView(false)} />;
   }
   if (notifView) {
     return (
@@ -3117,7 +3293,7 @@ function AgentHome({ providers, categories, reviews, session, onChanged }) {
         <span style={{ color: "#fff" }}>➕</span><span className="text-white font-semibold flex-1">Inscription terrain</span>
         <span style={{ color: "#fff" }}><NotificationBell items={notifItems} storageKey={`dabakala:notif:agent:${session.user.id}`} /></span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 dabakala-narrow-form">
         <div className="rounded-xl px-3 py-2.5 text-xs font-medium" style={{ background: "#EAF7EF", color: T.greenDeep }}>
           🛡️ En validant cette fiche, vous confirmez vous être rendu(e) sur place. Le badge « Vérifié terrain » est posé automatiquement. La validation finale reste à l'administrateur.
         </div>
@@ -3237,7 +3413,7 @@ function UsersAdmin({ currentUserId }) {
       <div className="px-4 py-3" style={{ background: T.navy }}>
         <div className="flex items-center gap-2 text-white font-semibold">👤 Utilisateurs</div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 dabakala-admin-grid">
         {msg && <div className="text-xs font-semibold" style={{ color: T.orange }}>{msg}</div>}
         {loading && (
           <div className="space-y-2">
@@ -3635,7 +3811,7 @@ function AdminHome({ providers, categories, reviews, session, onChanged, onCateg
         <button onClick={() => setTab("pending")} className="flex-1 rounded-lg py-1.5 text-xs font-semibold" style={{ background: tab === "pending" ? T.blue : "#fff", color: tab === "pending" ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>À valider ({pending.length})</button>
         <button onClick={() => setTab("validated")} className="flex-1 rounded-lg py-1.5 text-xs font-semibold" style={{ background: tab === "validated" ? T.blue : "#fff", color: tab === "validated" ? "#fff" : T.ink, border: `1px solid ${T.line}` }}>Validés ({validated.length})</button>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 dabakala-admin-grid">
         {list.length === 0 && <div className="text-sm text-center py-8" style={{ color: T.mute }}>Rien ici pour l'instant.</div>}
         {list.map((p) => {
           const cat = categories.find((c) => c.id === p.category_id) || {};
