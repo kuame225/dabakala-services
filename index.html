@@ -11,28 +11,54 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Dabakala" />
 <script>
+  // Les erreurs sont toujours collectées, mais le détail technique n'est
+  // affiché qu'en mode diagnostic : ajouter ?debug=1 à l'adresse.
+  // Un utilisateur ne doit jamais voir de message technique brut.
   window.__errors = [];
-  function renderBanner() {
+  var DEBUG = / [?&]debug=1/.test(" " + window.location.search) ||
+              window.localStorage.getItem("dabakala:debug") === "1";
+
+  function renderBanner(friendlyMsg) {
     if (!document.body) return;
     var el = document.getElementById("debug-banner");
     if (!el) {
       el = document.createElement("div");
       el.id = "debug-banner";
-      el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B3261E;color:#fff;padding:10px;font:12px monospace;white-space:pre-wrap;max-height:60vh;overflow:auto;";
+      el.style.cssText = DEBUG
+        ? "position:fixed;top:0;left:0;right:0;z-index:99999;background:#B3261E;color:#fff;padding:10px;font:12px monospace;white-space:pre-wrap;max-height:60vh;overflow:auto;"
+        : "position:fixed;inset:0;z-index:99999;background:#F7F9FC;color:#172033;padding:32px 24px;font:15px system-ui,-apple-system,sans-serif;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;";
       document.body.appendChild(el);
     }
-    el.textContent = window.__errors.join("\n\n---\n\n");
+    if (DEBUG) {
+      el.textContent = window.__errors.join("\n\n---\n\n");
+    } else {
+      el.innerHTML =
+        '<div style="font-weight:700;font-size:17px;margin-bottom:8px;">Impossible d\'afficher l\'application</div>' +
+        '<div style="color:#6B7280;max-width:320px;line-height:1.5;margin-bottom:20px;">' +
+        (friendlyMsg || "Vérifie ta connexion internet, puis réessaie.") + "</div>" +
+        '<button style="background:#0D47A1;color:#fff;border:0;border-radius:12px;padding:12px 20px;font-weight:700;font-size:14px;">Réessayer</button>';
+      el.querySelector("button").onclick = function () { window.location.reload(); };
+    }
   }
-  function showDebugBanner(msg) {
+
+  function showDebugBanner(msg, friendlyMsg) {
     window.__errors.push(msg);
-    if (document.body) renderBanner();
-    else document.addEventListener("DOMContentLoaded", renderBanner);
+    // Hors mode diagnostic, on n'affiche l'écran d'erreur que si l'app n'a
+    // pas réussi à démarrer. Si elle tourne, React gère l'erreur lui-même
+    // et affiche un message propre à l'intérieur de l'app.
+    var root = document.getElementById("root");
+    var appStarted = root && root.children.length > 0;
+    if (!DEBUG && appStarted) return;
+    if (document.body) renderBanner(friendlyMsg);
+    else document.addEventListener("DOMContentLoaded", function () { renderBanner(friendlyMsg); });
   }
+
   window.addEventListener("error", function (e) {
     var tag = e.target && e.target.tagName;
     if (e.target && e.target !== window) {
       if (tag === "SCRIPT" || tag === "LINK") {
-        showDebugBanner("Échec de chargement : " + (e.target.src || e.target.href));
+        showDebugBanner("Échec de chargement : " + (e.target.src || e.target.href),
+          "Un fichier de l'application n'a pas pu être téléchargé. Vérifie ta connexion internet.");
       }
       // autres ressources (images, tuiles de carte...) : on ignore, non bloquant
       return;
@@ -41,14 +67,17 @@
       showDebugBanner("Erreur JS : " + e.message + "\n" + (e.filename || "") + ":" + (e.lineno || ""));
     }
   }, true);
+
   window.addEventListener("unhandledrejection", function (e) {
     showDebugBanner("Promesse rejetée : " + (e.reason && e.reason.message ? e.reason.message : e.reason));
   });
+
   window.addEventListener("load", function () {
     setTimeout(function () {
       var root = document.getElementById("root");
       if (root && root.children.length === 0 && window.__errors.length === 0) {
-        showDebugBanner("Aucune erreur détectée, mais l'app ne s'est pas affichée après 4 secondes. Vérifie ta connexion internet ou essaie de vider le cache du navigateur.");
+        showDebugBanner("L'app ne s'est pas affichée après 4 secondes.",
+          "Le chargement prend plus de temps que prévu. Vérifie ta connexion internet, puis réessaie.");
       }
     }, 4000);
   });
@@ -201,6 +230,6 @@ if ("serviceWorker" in navigator) {
 }
 </script>
 
-<script src="./app.56V3KKPE.js" defer></script>
+<script src="./app.2QO6S6RJ.js" defer></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-const CACHE = "dabakala-563";
-const ASSETS = ["./manifest.json", "./icon-192.png", "./icon-512.png", "./banner-hero.jpg"].concat(["./app.56V3KKPE.js","./app.5MQKNDBK.css"]);
+const CACHE = "dabakala-266";
+const ASSETS = ["./manifest.json", "./icon-192.png", "./icon-512.png", "./banner-hero.jpg"].concat(["./app.2QO6S6RJ.js","./app.5MQKNDBK.css"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
