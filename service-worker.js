@@ -1,5 +1,5 @@
-const CACHE = "dabakala-v2";
-const ASSETS = ["./manifest.json", "./icon-192.png", "./icon-512.png"];
+const CACHE = "dabakala-563";
+const ASSETS = ["./manifest.json", "./icon-192.png", "./icon-512.png", "./banner-hero.jpg"].concat(["./app.56V3KKPE.js","./app.5MQKNDBK.css"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -9,6 +9,8 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  // Supprime les caches des anciennes versions (les fichiers app.[empreinte].js
+  // changent de nom à chaque déploiement, donc rien de périmé ne traîne).
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
@@ -20,27 +22,27 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
-  // Page HTML (navigation) : toujours essayer le réseau en premier, pour ne
-  // jamais servir une version périmée de l'app. Le cache ne sert que de
-  // secours si l'appareil est hors-ligne.
+  // Page HTML : toujours le réseau en premier, pour ne jamais servir une
+  // version périmée. cache:"no-store" force le contournement du cache HTTP
+  // du navigateur lui-même. Le cache ne sert que de secours hors-ligne.
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(event.request.url, { cache: "no-store" }).catch(() => caches.match(event.request))
     );
     return;
   }
 
-  // Fichiers statiques (icônes, manifest) : cache d'abord, réseau en secours.
+  // Fichiers statiques : cache d'abord (instantané). C'est sans risque car
+  // app.[empreinte].js change de nom à chaque nouvelle version — un ancien
+  // fichier en cache n'est jamais réclamé par le nouvel index.html.
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-          return resp;
-        })
-        .catch(() => cached);
-      return cached || network;
+      if (cached) return cached;
+      return fetch(event.request).then((resp) => {
+        const copy = resp.clone();
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        return resp;
+      });
     })
   );
 });
